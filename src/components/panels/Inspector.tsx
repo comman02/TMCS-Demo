@@ -1,0 +1,864 @@
+import { useState, useEffect, useRef } from 'react'
+import { useUIStore } from '@/store/useUIStore'
+import { Factory as FactoryIcon, Layers, Hash, Move, Maximize, Palette, Type, Trash2, ArrowRightLeft, Group as GroupIcon, Ungroup, AlignLeft, AlignCenter, AlignRight, ArrowUpToLine, AlignVerticalJustifyCenter, ArrowDownToLine, Pin, PinOff, Grid3X3 } from 'lucide-react'
+
+const PROPERTY_SCHEMAS: Record<string, { label: string, key: string, type: 'text' | 'number' | 'select', options?: string[] }[]> = {
+    agv: [
+        { label: 'Max Speed (m/s)', key: 'speed', type: 'number' },
+        { label: 'Battery (%)', key: 'battery', type: 'number' },
+        { label: 'Status', key: 'status', type: 'select', options: ['Idle', 'Moving', 'Charging', 'Error'] }
+    ],
+    amr: [
+        { label: 'Max Speed (m/s)', key: 'speed', type: 'number' },
+        { label: 'Payload (kg)', key: 'payload', type: 'number' }
+    ],
+    conveyor: [
+        { label: 'Speed (m/min)', key: 'speed', type: 'number' },
+        { label: 'Direction', key: 'direction', type: 'select', options: ['Forward', 'Backward', 'Bi-directional'] }
+    ],
+    stocker: [
+        { label: 'Capacity', key: 'capacity', type: 'number' },
+        { label: 'Zone ID', key: 'zoneId', type: 'text' }
+    ],
+    buffer: [
+        { label: 'Capacity', key: 'capacity', type: 'number' },
+        { label: 'Type', key: 'type', type: 'select', options: ['Inbound', 'Outbound', 'Internal'] }
+    ],
+    rack: [
+        { label: 'Levels', key: 'levels', type: 'number' },
+        { label: 'Bays', key: 'bays', type: 'number' }
+    ],
+    wall: [
+        { label: 'Thickness (mm)', key: 'thickness', type: 'number' },
+        { label: 'Material', key: 'material', type: 'text' }
+    ],
+    pillar: [
+        { label: 'Shape', key: 'shape', type: 'select', options: ['Rectangular', 'Circular'] }
+    ],
+    charger: [
+        { label: 'Power (kW)', key: 'power', type: 'number' },
+        { label: 'Type', key: 'type', type: 'select', options: ['Fast', 'Standard'] }
+    ]
+}
+
+export function Inspector() {
+    const {
+        selectedIds,
+        canvasObjects,
+        updateCanvasObject,
+        removeCanvasObject,
+        groupObjects,
+        ungroupObjects,
+        canvasLinks,
+        updateLink,
+        removeLink,
+        alignObjects,
+        renameCanvasObject,
+        gridConfig,
+        setGridConfig,
+        layers,
+        updateLayer,
+        removeLayer,
+        renameLayer,
+        activeAssetId,
+        assets,
+        updateAssetPreset,
+        activeLayerId
+    } = useUIStore()
+
+    const [position, setPosition] = useState<{ x: number, y: number } | null>(null)
+    const [isDragging, setIsDragging] = useState(false)
+
+    const [isPinned, setIsPinned] = useState(false)
+    const dragOffsetRef = useRef({ x: 0, y: 0 })
+    const panelRef = useRef<HTMLDivElement>(null)
+
+    // Handle Dragging
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (isDragging) {
+                setPosition({
+                    x: e.clientX - dragOffsetRef.current.x,
+                    y: e.clientY - dragOffsetRef.current.y
+                })
+            }
+        }
+        const handleMouseUp = () => {
+            setIsDragging(false)
+        }
+
+        if (isDragging) {
+            window.addEventListener('mousemove', handleMouseMove)
+            window.addEventListener('mouseup', handleMouseUp)
+        }
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove)
+            window.removeEventListener('mouseup', handleMouseUp)
+        }
+    }, [isDragging])
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (isPinned) return
+        if (panelRef.current) {
+            const rect = panelRef.current.getBoundingClientRect()
+            dragOffsetRef.current = {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            }
+            // If first time dragging, set initial position to current styles
+            if (!position) {
+                setPosition({ x: rect.left, y: rect.top })
+            }
+            setIsDragging(true)
+        }
+    }
+
+    // For simplicity in Phase 4, if multiple objects are selected, just show "Multiple Selected"
+    // or picking the first one for now. Ideal is multi-edit.
+    // Let's implement single edit first, and a multi-select info screen.
+
+    const isMultiSelect = selectedIds.length > 1
+    const selectedId = selectedIds.length === 1 ? selectedIds[0] : null
+
+    const selectedObject = selectedId ? (canvasObjects.find(o => o.id === selectedId) || null) : null
+    const selectedLink = (!selectedObject && selectedId) ? (canvasLinks.find(l => l.id === selectedId) || null) : null
+
+    // Helper for unit conversion
+    const toDisplay = (val: number) => {
+        switch (gridConfig.unit) {
+            case 'cm': return Number((val / 10).toFixed(2))
+            case 'm': return Number((val / 1000).toFixed(3))
+            case 'km': return Number((val / 1000000).toFixed(6))
+            default: return Number(val.toFixed(1)) // mm
+        }
+    }
+
+    const fromDisplay = (val: number) => {
+        switch (gridConfig.unit) {
+            case 'cm': return val * 10
+            case 'm': return val * 1000
+            case 'km': return val * 1000000
+            default: return val
+        }
+    }
+
+    // Handlers
+    const handleChange = (key: string, value: any) => {
+        if (selectedId) updateCanvasObject(selectedId, { [key]: value })
+    }
+
+    // --- Render Content Logic ---
+    let headerContent = null
+    let bodyContent = null
+    let footerContent = null
+
+    if (isMultiSelect) {
+        headerContent = (
+            <div className="flex items-center gap-2">
+                <Hash size={20} className="text-blue-500" />
+                <span className="font-medium">{selectedIds.length} objects selected</span>
+            </div>
+        )
+        bodyContent = (
+            <div className="space-y-6">
+                {/* Alignment Tools */}
+                <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2 block">Alignment</label>
+                    <div className="grid grid-cols-6 gap-1 mb-2">
+                        <button onClick={() => alignObjects('left')} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 hover:text-blue-600 transition-colors" title="Align Left">
+                            <AlignLeft size={16} />
+                        </button>
+                        <button onClick={() => alignObjects('center')} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 hover:text-blue-600 transition-colors" title="Align Center (Horizontal)">
+                            <AlignCenter size={16} />
+                        </button>
+                        <button onClick={() => alignObjects('right')} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 hover:text-blue-600 transition-colors" title="Align Right">
+                            <AlignRight size={16} />
+                        </button>
+                        <button onClick={() => alignObjects('top')} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 hover:text-blue-600 transition-colors" title="Align Top">
+                            <ArrowUpToLine size={16} />
+                        </button>
+                        <button onClick={() => alignObjects('middle')} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 hover:text-blue-600 transition-colors" title="Align Middle (Vertical)">
+                            <AlignVerticalJustifyCenter size={16} />
+                        </button>
+                        <button onClick={() => alignObjects('bottom')} className="p-1.5 hover:bg-gray-100 rounded-md text-gray-600 hover:text-blue-600 transition-colors" title="Align Bottom">
+                            <ArrowDownToLine size={16} />
+                        </button>
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    <button
+                        onClick={() => groupObjects(selectedIds)}
+                        className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-md flex items-center justify-center gap-2 transition-colors text-sm font-medium border border-gray-100"
+                    >
+                        <GroupIcon size={16} /> Group Objects
+                    </button>
+                    <button
+                        onClick={() => { selectedIds.forEach(id => removeCanvasObject(id)) }}
+                        className="w-full py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-md flex items-center justify-center gap-2 transition-colors text-sm font-medium"
+                    >
+                        <Trash2 size={16} /> Delete Selected
+                    </button>
+                </div>
+            </div>
+        )
+    } else if (selectedLink) {
+        headerContent = (
+            <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                    <ArrowRightLeft size={16} />
+                    <span className="font-semibold text-sm text-gray-900">Link Properties</span>
+                </div>
+                <span className="text-xs font-mono text-gray-400">{selectedLink.id.slice(0, 4)}</span>
+            </div>
+        )
+        bodyContent = (
+            <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <Palette size={12} /> Style
+                </div>
+                <div className="space-y-1">
+                    <label className="text-xs text-gray-500">Color</label>
+                    <div className="flex gap-2">
+                        <input
+                            type="color"
+                            className="h-8 w-8 rounded cursor-pointer border-0 p-0"
+                            value={selectedLink.color}
+                            onChange={(e) => updateLink(selectedLink.id, { color: e.target.value })}
+                        />
+                        <input
+                            type="text"
+                            className="flex-1 px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all uppercase"
+                            value={selectedLink.color}
+                            onChange={(e) => updateLink(selectedLink.id, { color: e.target.value })}
+                        />
+                    </div>
+                </div>
+            </div>
+        )
+        footerContent = (
+            <button
+                onClick={() => removeLink(selectedLink.id)}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition-colors text-sm font-medium"
+            >
+                <Trash2 size={16} /> Delete Link
+            </button>
+        )
+    } else if (selectedObject) {
+        headerContent = (
+            <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                    {selectedObject.type === 'rect' && <Maximize size={16} />}
+                    {selectedObject.type === 'circle' && <Maximize size={16} className="rounded-full" />}
+                    {selectedObject.type === 'text' && <Type size={16} />}
+                    {selectedObject.type === 'group' && <GroupIcon size={16} />}
+                    <span className="capitalize font-semibold text-sm text-gray-900">{selectedObject.type} Properties</span>
+                </div>
+                <span className="text-xs font-mono text-gray-400">{selectedObject.id.slice(0, 4)}</span>
+            </div>
+        )
+        bodyContent = (
+            <div className="space-y-5">
+                {selectedObject.type === 'group' && (
+                    <div className="pb-0">
+                        <button
+                            onClick={() => ungroupObjects(selectedObject.id)}
+                            className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md flex items-center justify-center gap-2 transition-colors text-sm font-medium"
+                        >
+                            <Ungroup size={16} /> Ungroup
+                        </button>
+                    </div>
+                )}
+
+                {/* Identity Group */}
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <Hash size={12} /> Identity
+                    </div>
+                    <div className="space-y-2">
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Name</label>
+                            <input
+                                type="text"
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                value={selectedObject.name || ''}
+                                onChange={(e) => handleChange('name', e.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">ID (Unique)</label>
+                            <input
+                                type="text"
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
+                                value={selectedObject.id}
+                                onChange={(e) => renameCanvasObject(selectedObject.id, e.target.value)}
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="h-px bg-gray-100" />
+
+                {/* Position Group */}
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <Move size={12} /> Position ({gridConfig.unit})
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">X</label>
+                            <input
+                                type="number"
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+                                value={toDisplay(selectedObject.x)}
+                                onChange={(e) => handleChange('x', fromDisplay(Number(e.target.value)))}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Y</label>
+                            <input
+                                type="number"
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+                                value={toDisplay(selectedObject.y)}
+                                onChange={(e) => handleChange('y', fromDisplay(Number(e.target.value)))}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Elevation (Z)</label>
+                            <input
+                                type="number"
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+                                value={toDisplay(selectedObject.z || 0)}
+                                onChange={(e) => handleChange('z', fromDisplay(Number(e.target.value)))}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Rotation (°)</label>
+                            <input
+                                type="number"
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+                                value={selectedObject.rotation || 0}
+                                onChange={(e) => handleChange('rotation', Number(e.target.value))}
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="h-px bg-gray-100" />
+
+                {/* Dimensions Group - 3D Size */}
+                {(selectedObject.width !== undefined) && (
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <Maximize size={12} /> Size ({gridConfig.unit})
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            <div className="space-y-1">
+                                <label className="text-xs text-gray-500">Width (W)</label>
+                                <input
+                                    type="number"
+                                    className="w-full px-2 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+                                    value={toDisplay(selectedObject.width)}
+                                    onChange={(e) => handleChange('width', fromDisplay(Number(e.target.value)))}
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs text-gray-500">Length (L)</label>
+                                <input
+                                    type="number"
+                                    className="w-full px-2 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+                                    value={toDisplay(selectedObject.height!)}
+                                    onChange={(e) => handleChange('height', fromDisplay(Number(e.target.value)))}
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs text-gray-500">Height (H)</label>
+                                <input
+                                    type="number"
+                                    className="w-full px-2 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+                                    value={toDisplay(selectedObject.depth || 0)}
+                                    onChange={(e) => handleChange('depth', fromDisplay(Number(e.target.value)))}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                <div className="h-px bg-gray-100" />
+
+                {/* Type-Specific Properties */}
+                {(() => {
+                    const schema = PROPERTY_SCHEMAS[selectedObject.type]
+                    if (!schema) return null
+
+                    return (
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <AlignLeft size={12} /> {selectedObject.type} Config
+                            </div>
+                            <div className="space-y-3 bg-gray-50 p-3 rounded-md border border-gray-100">
+                                {schema.map((field) => (
+                                    <div key={field.key} className="space-y-1">
+                                        <label className="text-xs text-gray-500">{field.label}</label>
+                                        {field.type === 'select' ? (
+                                            <select
+                                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                                                value={selectedObject.metadata?.[field.key] || ''}
+                                                onChange={(e) => {
+                                                    const newMetadata = { ...selectedObject.metadata, [field.key]: e.target.value }
+                                                    updateCanvasObject(selectedObject.id, { metadata: newMetadata })
+                                                }}
+                                            >
+                                                <option value="">Select...</option>
+                                                {field.options?.map(opt => (
+                                                    <option key={opt} value={opt}>{opt}</option>
+                                                ))}
+                                            </select>
+                                        ) : (
+                                            <input
+                                                type={field.type}
+                                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+                                                value={selectedObject.metadata?.[field.key] || ''}
+                                                onChange={(e) => {
+                                                    const val = field.type === 'number' ? Number(e.target.value) : e.target.value
+                                                    const newMetadata = { ...selectedObject.metadata, [field.key]: val }
+                                                    updateCanvasObject(selectedObject.id, { metadata: newMetadata })
+                                                }}
+                                            />
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )
+                })()}
+
+                <div className="h-px bg-gray-100" />
+
+                {/* Style & Typo */}
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <Palette size={12} /> Style
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-xs text-gray-500">Fill Color</label>
+                        <div className="flex gap-2">
+                            <input
+                                type="color"
+                                className="h-8 w-8 rounded cursor-pointer border-0 p-0"
+                                value={selectedObject.fill || '#000000'}
+                                onChange={(e) => handleChange('fill', e.target.value)}
+                            />
+                            <input
+                                type="text"
+                                className="flex-1 px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all uppercase"
+                                value={selectedObject.fill || ''}
+                                onChange={(e) => handleChange('fill', e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-xs text-gray-500">Opacity</label>
+                        <div className="flex gap-2 items-center">
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.1"
+                                className="flex-1 accent-blue-500 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                value={selectedObject.opacity ?? 1}
+                                onChange={(e) => handleChange('opacity', Number(e.target.value))}
+                            />
+                            <span className="text-xs w-8 text-right font-mono text-gray-500">
+                                {Math.round((selectedObject.opacity ?? 1) * 100)}%
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                {selectedObject.type !== 'text' && (
+                    <div className="space-y-3 pt-3 border-t border-gray-100">
+                        <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <Type size={12} /> Label
+                        </div>
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs text-gray-500">Show Name</label>
+                                <input
+                                    type="checkbox"
+                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    checked={selectedObject.showLabel || false}
+                                    onChange={(e) => handleChange('showLabel', e.target.checked)}
+                                />
+                            </div>
+
+                            {selectedObject.showLabel && (
+                                <>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-500">Text Color</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="color"
+                                                className="h-8 w-8 rounded cursor-pointer border-0 p-0"
+                                                value={selectedObject.textColor || '#ffffff'}
+                                                onChange={(e) => handleChange('textColor', e.target.value)}
+                                            />
+                                            <input
+                                                type="text"
+                                                className="flex-1 px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all uppercase"
+                                                value={selectedObject.textColor || '#ffffff'}
+                                                onChange={(e) => handleChange('textColor', e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-gray-500">Font Size</label>
+                                        <input
+                                            type="number"
+                                            className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                            value={selectedObject.fontSize || 12}
+                                            onChange={(e) => handleChange('fontSize', Number(e.target.value))}
+                                        />
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {selectedObject.type === 'text' && (
+                    <div className="space-y-3 pt-3 border-t border-gray-100">
+                        <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <Type size={12} /> Typography
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Content</label>
+                            <input
+                                type="text"
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                value={selectedObject.text}
+                                onChange={(e) => handleChange('text', e.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Font Size</label>
+                            <input
+                                type="number"
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                value={selectedObject.fontSize}
+                                onChange={(e) => handleChange('fontSize', Number(e.target.value))}
+                            />
+                        </div>
+                    </div>
+                )}
+            </div>
+        )
+        footerContent = (
+            <button
+                onClick={() => {
+                    if (selectedId) {
+                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                        updateCanvasObject(selectedId, { ...selectedObject })
+                        removeCanvasObject(selectedId)
+                    }
+                }}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition-colors text-sm font-medium"
+            >
+                <Trash2 size={16} /> Delete Object
+            </button>
+        )
+
+    } else if (activeAssetId) {
+        // ASSET INSPECTOR
+        const selectedAsset = assets.find(a => a.id === activeAssetId)
+        if (selectedAsset) {
+            headerContent = (
+                <div className="flex items-center gap-2 overflow-hidden">
+                    <div className="p-1 bg-green-100 rounded text-green-600">
+                        <FactoryIcon size={14} />
+                    </div>
+                    <div className="flex flex-col overflow-hidden">
+                        <span className="font-semibold text-sm truncate">{selectedAsset.name}</span>
+                        <span className="text-[10px] text-gray-400 font-mono truncate">Asset Library Preset</span>
+                    </div>
+                </div>
+            )
+
+            const schema = PROPERTY_SCHEMAS[selectedAsset.type]
+
+            bodyContent = (
+                <div className="space-y-4">
+                    {/* Basic Info */}
+                    <div className="space-y-3">
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Preset Name</label>
+                            <input
+                                type="text"
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                value={selectedAsset.name}
+                                onChange={(e) => updateAssetPreset(selectedAsset.id, { name: e.target.value })}
+                            />
+                        </div>
+                    </div>
+
+                    {schema && (
+                        <>
+                            <div className="h-px bg-gray-100" />
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <AlignLeft size={12} /> Default Properties
+                                </div>
+                                <div className="space-y-3 bg-gray-50 p-3 rounded-md border border-gray-100">
+                                    {schema.map((field) => (
+                                        <div key={field.key} className="space-y-1">
+                                            <label className="text-xs text-gray-500">{field.label}</label>
+                                            {field.type === 'select' ? (
+                                                <select
+                                                    className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                                                    value={selectedAsset.metadata?.[field.key] || ''}
+                                                    onChange={(e) => {
+                                                        const newMetadata = { ...selectedAsset.metadata, [field.key]: e.target.value }
+                                                        updateAssetPreset(selectedAsset.id, { metadata: newMetadata })
+                                                    }}
+                                                >
+                                                    <option value="">Select...</option>
+                                                    {field.options?.map(opt => (
+                                                        <option key={opt} value={opt}>{opt}</option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <input
+                                                    type={field.type}
+                                                    className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+                                                    value={selectedAsset.metadata?.[field.key] || ''}
+                                                    onChange={(e) => {
+                                                        const val = field.type === 'number' ? Number(e.target.value) : e.target.value
+                                                        const newMetadata = { ...selectedAsset.metadata, [field.key]: val }
+                                                        updateAssetPreset(selectedAsset.id, { metadata: newMetadata })
+                                                    }}
+                                                />
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            )
+        }
+    } else if (activeLayerId) {
+        // LAYER PROPERTIES (Fab / Floor)
+        const activeLayer = layers.find(l => l.id === activeLayerId)
+
+        if (activeLayer) {
+            if (activeLayer.type === 'common') {
+                // COMMON / FAB PROPERTIES
+                headerContent = (
+                    <div className="flex items-center gap-2">
+                        <FactoryIcon size={16} />
+                        <span className="font-semibold text-sm text-gray-900">Fab Properties</span>
+                    </div>
+                )
+                bodyContent = (
+                    <div className="space-y-5">
+                        {/* Grid Configuration */}
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                    <Maximize size={12} /> Grid Configuration
+                                </div>
+                                <select
+                                    className="text-xs border rounded px-1 py-0.5 bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    value={gridConfig.unit}
+                                    onChange={(e) => setGridConfig({ unit: e.target.value as any })}
+                                >
+                                    <option value="mm">mm</option>
+                                    <option value="cm">cm</option>
+                                    <option value="m">m</option>
+                                    <option value="km">km</option>
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-500">Grid Unit Size ({gridConfig.unit})</label>
+                                    <input
+                                        type="number"
+                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
+                                        value={toDisplay(gridConfig.size)}
+                                        onChange={(e) => {
+                                            setGridConfig({ size: fromDisplay(Number(e.target.value)) })
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-blue-50/50 p-3 rounded-md text-xs text-blue-700 leading-relaxed border border-blue-100">
+                            <strong>Default Layer:</strong> Objects placed here are visible on all floors. Use this for common structural elements like pillars or main walls.
+                        </div>
+                    </div>
+                )
+            } else {
+                // SPECIFIC FLOOR PROPERTIES
+                headerContent = (
+                    <div className="flex items-center gap-2">
+                        <Layers size={16} />
+                        <span className="font-semibold text-sm text-gray-900">Floor Properties</span>
+                    </div>
+                )
+                bodyContent = (
+                    <div className="space-y-5">
+                        {/* Identity */}
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <Hash size={12} /> Identity
+                            </div>
+                            <div className="space-y-2">
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-500">Floor Name</label>
+                                    <input
+                                        type="text"
+                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                        value={activeLayer.name}
+                                        onChange={(e) => updateLayer(activeLayer.id, { name: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-500">ID (Unique)</label>
+                                    <input
+                                        type="text"
+                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
+                                        value={activeLayer.id}
+                                        onChange={(e) => renameLayer(activeLayer.id, e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="h-px bg-gray-100" />
+
+                        {/* Geometry */}
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <Maximize size={12} /> Geometry
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs text-gray-500">Floor Height ({gridConfig.unit})</label>
+                                <input
+                                    type="number"
+                                    className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                    value={toDisplay(activeLayer.height || 0)}
+                                    onChange={(e) => updateLayer(activeLayer.id, { height: fromDisplay(Number(e.target.value)) })}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Grid Config */}
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <Grid3X3 size={12} /> Grid Layout
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-500">Columns (X)</label>
+                                    <input
+                                        type="number"
+                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                        value={activeLayer.gridCountX || 60}
+                                        onChange={(e) => updateLayer(activeLayer.id, { gridCountX: Number(e.target.value) })}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-500">Rows (Y)</label>
+                                    <input
+                                        type="number"
+                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                        value={activeLayer.gridCountY || 40}
+                                        onChange={(e) => updateLayer(activeLayer.id, { gridCountY: Number(e.target.value) })}
+                                    />
+                                </div>
+                            </div>
+                            <div className="text-[10px] text-right text-gray-400 font-mono">
+                                {(() => {
+                                    const w = (activeLayer.gridCountX || 60) * gridConfig.size
+                                    const h = (activeLayer.gridCountY || 40) * gridConfig.size
+
+                                    const format = (val: number) => {
+                                        switch (gridConfig.unit) {
+                                            case 'cm': return (val / 10).toLocaleString()
+                                            case 'm': return (val / 1000).toLocaleString()
+                                            case 'km': return (val / 1000000).toLocaleString()
+                                            default: return val.toLocaleString()
+                                        }
+                                    }
+                                    return `${format(w)} x ${format(h)} ${gridConfig.unit}`
+                                })()}
+                            </div>
+                        </div>
+                    </div>
+                )
+                footerContent = (
+                    <button
+                        onClick={() => removeLayer(activeLayer.id)}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition-colors text-sm font-medium"
+                    >
+                        <Trash2 size={16} /> Delete Floor
+                    </button>
+                )
+            }
+        }
+    }
+
+    return (
+        <div
+            ref={panelRef}
+            style={{
+                left: position ? position.x : undefined,
+                top: position ? position.y : undefined,
+                right: position ? undefined : 16, // Default position: right-4 (16px)
+                // If position is not set, it means it's in its initial absolute position.
+                // If position is set, it's fixed and controlled by `left` and `top`.
+            }}
+            className={`
+                w-72 bg-white/95 backdrop-blur-sm border rounded-xl shadow-xl flex flex-col overflow-hidden max-h-[calc(100%-2rem)] animate-in slide-in-from-right-4 duration-200 z-50
+                ${position ? 'fixed' : 'absolute top-4'}
+            `}
+        >
+            <div
+                onMouseDown={handleMouseDown}
+                className={`p-4 border-b bg-gray-50/50 flex items-center justify-between select-none transition-colors ${isPinned ? '' : 'cursor-move active:bg-gray-100'
+                    }`}
+                title={isPinned ? "Panel Pinned" : "Drag to move"}
+            >
+                <div className="flex-1 min-w-0 pr-2">
+                    {headerContent}
+                </div>
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation()
+                        setIsPinned(!isPinned)
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className={`p-1.5 rounded-md transition-colors ${isPinned
+                        ? 'text-blue-600 bg-blue-50 hover:bg-blue-100'
+                        : 'text-gray-400 hover:text-gray-600 hover:bg-gray-200'
+                        }`}
+                    title={isPinned ? "Unpin Panel" : "Pin Panel"}
+                >
+                    {isPinned ? <Pin size={14} className="fill-current" /> : <PinOff size={14} />}
+                </button>
+            </div>
+
+            <div className="p-4 space-y-5 overflow-y-auto flex-1">
+                {bodyContent}
+            </div>
+
+            {footerContent && (
+                <div className="p-4 border-t bg-gray-50/50">
+                    {footerContent}
+                </div>
+            )}
+        </div>
+    )
+}

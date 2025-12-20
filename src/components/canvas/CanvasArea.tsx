@@ -1,0 +1,608 @@
+import { useRef, useState, useEffect, useCallback } from 'react'
+import { Stage, Layer, Transformer, Arrow } from 'react-konva'
+import { KonvaEventObject } from 'konva/lib/Node'
+import { Maximize } from 'lucide-react'
+import { useContainerDimensions } from '@/hooks/useContainerDimensions'
+import { Grid } from './Grid'
+import { useUIStore } from '@/store/useUIStore'
+import { RenderObject } from './RenderObject'
+
+// Simple ID generator if uuid not installed (fallback)
+const generateId = () => Math.random().toString(36).substr(2, 9)
+
+export function CanvasArea() {
+    const { ref: containerRef, dimensions } = useContainerDimensions()
+    const stageRef = useRef<any>(null)
+    const transformerRef = useRef<any>(null)
+
+    const {
+        canvasObjects,
+        canvasLinks,
+        addCanvasObject,
+        selectedIds,
+        selectObject,
+        toggleSelection,
+        clearSelection,
+        updateCanvasObject,
+        removeCanvasObject,
+        activeTool,
+        setActiveTool,
+        addLink,
+        gridConfig,
+        layers,
+        activeLayerId,
+        setActiveLayerId,
+        assets
+    } = useUIStore()
+
+    const [scale, setScale] = useState(1)
+    const [baseScale, setBaseScale] = useState(1) // Base scale for 100% reference
+    const [position, setPosition] = useState({ x: 0, y: 0 })
+    const [connectSourceId, setConnectSourceId] = useState<string | null>(null)
+
+    // Get Active Layer Dimensions
+    const activeLayer = layers.find(l => l.id === activeLayerId) || layers[0]
+    const currentGridCountX = activeLayer?.gridCountX || 60
+    const currentGridCountY = activeLayer?.gridCountY || 40
+
+    // Filter objects: Show objects on current layer AND objects on any 'common' layer (Default)
+    const visibleObjects = canvasObjects.filter(obj => {
+        if (obj.layerId === activeLayerId) return true
+        // If object has no layerId, it might be legacy; show it only if active layer is '1f' or 'default'? 
+        // Better to assign them. For now, strict check:
+        const objLayer = layers.find(l => l.id === obj.layerId)
+        return objLayer?.type === 'common'
+    })
+
+    // Update transformer when selection changes (Multi-select support)
+    useEffect(() => {
+        if (stageRef.current && transformerRef.current) {
+            const nodes = selectedIds.map(id => stageRef.current.findOne('.' + id)).filter(Boolean)
+
+            if (nodes.length > 0) {
+                transformerRef.current.nodes(nodes)
+                transformerRef.current.getLayer().batchDraw()
+            } else {
+                transformerRef.current.nodes([])
+            }
+        }
+    }, [selectedIds, visibleObjects]) // Depend on visibleObjects instead of all objects
+
+    useEffect(() => {
+        const handleExport = () => {
+            if (stageRef.current) {
+                const uri = stageRef.current.toDataURL({ pixelRatio: 2 })
+                const link = document.createElement('a')
+                link.download = `layout-${new Date().toISOString().slice(0, 10)}.png`
+                link.href = uri
+                document.body.appendChild(link)
+                link.click()
+                document.body.removeChild(link)
+            }
+        }
+        window.addEventListener('tmcs-export-image', handleExport)
+        return () => window.removeEventListener('tmcs-export-image', handleExport)
+    }, [])
+
+    // Handle Keyboard Events (Delete)
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
+                // Prevent backspace from navigating back if not in an input
+                const activeElement = document.activeElement
+                if (activeElement?.tagName !== 'INPUT' && activeElement?.tagName !== 'TEXTAREA') {
+                    selectedIds.forEach(id => removeCanvasObject(id))
+                    clearSelection()
+                }
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [selectedIds, removeCanvasObject, clearSelection])
+
+    const fitToScreen = useCallback(() => {
+        if (dimensions.width > 0 && dimensions.height > 0) {
+            const totalFabWidth = gridConfig.size * currentGridCountX
+            const totalFabHeight = gridConfig.size * currentGridCountY
+
+            // Handle edge case where fab size is 0
+            if (totalFabWidth === 0 || totalFabHeight === 0) return
+
+            // 1. Calculate Scale to Fit (with 10% padding)
+            const padding = 0.9
+            const scaleX = dimensions.width / totalFabWidth
+            const scaleY = dimensions.height / totalFabHeight
+            const fitScale = Math.min(scaleX, scaleY) * padding
+
+            // 2. Center the scaled Fab
+            const scaledWidth = totalFabWidth * fitScale
+            const scaledHeight = totalFabHeight * fitScale
+
+            const initialX = (dimensions.width - scaledWidth) / 2
+            const initialY = (dimensions.height - scaledHeight) / 2
+
+            setBaseScale(fitScale) // Set 100% reference
+            setScale(fitScale)
+            setPosition({ x: initialX, y: initialY })
+        }
+    }, [dimensions.width, dimensions.height, gridConfig.size, currentGridCountX, currentGridCountY])
+
+    // Initial Center Alignment
+    useEffect(() => {
+        fitToScreen()
+    }, [fitToScreen])
+
+    // Event Handlers
+    const handleWheel = (e: KonvaEventObject<WheelEvent>) => {
+        e.evt.preventDefault()
+        const stage = stageRef.current
+        if (!stage) return
+        const oldScale = stage.scaleX()
+        const pointer = stage.getPointerPosition()
+        if (!pointer) return
+
+        const scaleBy = 1.1
+        const newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy
+
+        // Limit zoom relative to base scale (10% to 300%)
+        // User requested max 300%
+        const minScale = baseScale * 0.1
+        const maxScale = baseScale * 3.0
+
+        if (newScale < minScale || newScale > maxScale) return
+
+        const mousePointTo = {
+            x: (pointer.x - stage.x()) / oldScale,
+            y: (pointer.y - stage.y()) / oldScale,
+        }
+
+        const newPos = {
+            x: pointer.x - mousePointTo.x * newScale,
+            y: pointer.y - mousePointTo.y * newScale,
+        }
+
+        setScale(newScale)
+        setPosition(newPos)
+    }
+
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault()
+        stageRef.current.setPointersPositions(e)
+        const type = e.dataTransfer.getData('type')
+        if (!type) return
+
+        const stage = stageRef.current
+        const pointer = stage.getPointerPosition()
+        if (!pointer) return
+
+        let stageX = (pointer.x - position.x) / scale
+        let stageY = (pointer.y - position.y) / scale
+
+        // Default to grid size (1x1 cell)
+        let width = gridConfig.size
+        let height = gridConfig.size
+        let radius = gridConfig.size / 2
+        let fill = '#3b82f6'
+
+        switch (type) {
+            case 'agv':
+            case 'amr':
+                fill = type === 'agv' ? '#f59e0b' : '#10b981'
+                break
+            case 'conveyor':
+            case 'rail':
+                // Conveyors/Rails might look better as 1xN or Nx1, but user requested "size of 1 grid cell".
+                // We'll stick to 1x1 for now as per specific request, or maybe 2x1 for long items if strictly needed?
+                // Request: "fixed to the size of 1 grid cell" -> 1x1.
+                fill = '#475569'
+                break
+            case 'stocker':
+            case 'rack':
+            case 'buffer':
+                fill = '#3b82f6'
+                break
+            case 'crane':
+            case 'port':
+                fill = '#ef4444'
+                break
+            case 'equipment':
+                fill = '#8b5cf6' // Violet-500
+                break
+            case 'lifter':
+                fill = '#06b6d4' // Cyan-500
+                break
+            case 'charger':
+                fill = '#84cc16' // Lime-500
+                break
+            case 'wall':
+                fill = '#64748b' // Slate-500
+                break
+            case 'pillar':
+                fill = '#334155' // Slate-700
+                break
+            case 'text':
+                // Text might not need dimensions, but good to have defaults
+                break
+            default:
+                // rect, circle
+                break
+        }
+
+        const totalWidth = gridConfig.size * currentGridCountX
+        const totalHeight = gridConfig.size * currentGridCountY
+
+        // Clamp Drop Position
+        if (stageX < 0) stageX = 0
+        if (stageY < 0) stageY = 0
+        if (stageX > totalWidth - width) stageX = totalWidth - width
+        if (stageY > totalHeight - height) stageY = totalHeight - height
+
+        const presetId = e.dataTransfer.getData('presetId')
+        const preset = presetId ? assets.find(a => a.id === presetId) : null
+
+        const name = type.charAt(0).toUpperCase() + type.slice(1)
+
+        let newObj = {
+            id: `${name}_${generateId()}`,
+            name,
+            type,
+            x: stageX,
+            y: stageY,
+            z: 0,
+            rotation: 0,
+            opacity: 1,
+            showLabel: false,
+            textColor: '#ffffff',
+            fill,
+            width,
+            height,
+            depth: height, // Initial 3D height same as Y size? Or grid size? Let's use height (size) for now.
+            radius,
+            text: 'Text',
+            fontSize: gridConfig.size / 5, // auto-scale font size slightly? or keep fixed? 20 is fine but maybe large for small grids. Let's keep 20 for now or resize.
+        }
+
+        // Apply Preset Metadata Overrides
+        if (preset && preset.metadata) {
+            // Only copy valid visual properties that match CanvasObject keys
+            const validKeys = [
+                'width', 'height', 'depth', 'z', 'rotation', 'opacity',
+                'fill', 'showLabel', 'textColor', 'name', 'fontSize'
+            ]
+
+            // If preset has a name (e.g. "Stocker Large"), maybe use it as base name?
+            // User might prefer the generic "Stocker" name with ID, or "Stocker Large_123".
+            // Let's stick to type-based ID for now, but maybe use preset name for something?
+            // Actually, if preset has 'name', we might want to use it if it was customized.
+
+            const meta = preset.metadata
+            const overrides: any = {}
+            validKeys.forEach(key => {
+                if (meta[key] !== undefined) {
+                    overrides[key] = meta[key]
+                }
+            })
+            newObj = { ...newObj, ...overrides }
+        }
+
+        addCanvasObject(newObj)
+        selectObject(newObj.id)
+    }
+
+    const handleDragEnd = (e: KonvaEventObject<DragEvent>, id: string) => {
+        updateCanvasObject(id, {
+            x: e.target.x(),
+            y: e.target.y(),
+        })
+    }
+
+    const handleTransformEnd = (e: KonvaEventObject<Event>, id: string) => {
+        // Sync transformer changes back to store (scale, rotation, etc)
+        const node = e.target
+        const scaleX = node.scaleX()
+        const scaleY = node.scaleY()
+
+        // Reset scale to 1 and update width/height to avoid compounding scale
+        node.scaleX(1)
+        node.scaleY(1)
+
+        updateCanvasObject(id, {
+            x: node.x(),
+            y: node.y(),
+            width: node.width() * scaleX,
+            height: node.height() * scaleY,
+            rotation: node.rotation(),
+        })
+    }
+
+    return (
+        <div
+            className="absolute inset-0 bg-gray-100 overflow-hidden"
+            ref={containerRef}
+            onDrop={handleDrop}
+            onDragOver={(e) => e.preventDefault()}
+        >
+            {dimensions.width > 0 && dimensions.height > 0 && (
+                <Stage
+                    ref={stageRef}
+                    width={dimensions.width}
+                    height={dimensions.height}
+                    draggable
+                    onWheel={handleWheel}
+                    scaleX={scale}
+                    scaleY={scale}
+                    x={position.x}
+                    y={position.y}
+                    onDragEnd={(e) => {
+                        if (e.target === stageRef.current) {
+                            setPosition({ x: e.target.x(), y: e.target.y() })
+                        }
+                    }}
+                    onClick={(e) => {
+                        // Deselect if clicked on empty stage
+                        const clickedOnEmpty = e.target === stageRef.current
+                        if (clickedOnEmpty) {
+                            if (activeTool === 'connect') {
+                                setConnectSourceId(null)
+                                setActiveTool('select')
+                            }
+                            selectObject(null)
+                        }
+                    }}
+                >
+                    <Layer>
+                        <Grid
+                            width={dimensions.width}
+                            height={dimensions.height}
+                            scale={scale}
+                            x={position.x}
+                            y={position.y}
+                            size={gridConfig.size}
+                            countX={currentGridCountX}
+                            countY={currentGridCountY}
+                        />
+                    </Layer>
+                    <Layer>
+                        {/* Links Layer */}
+                        {canvasLinks?.map((link) => {
+                            const fromObj = visibleObjects.find(o => o.id === link.from)
+                            const toObj = visibleObjects.find(o => o.id === link.to)
+
+                            if (!fromObj || !toObj) return null
+
+                            const fromX = fromObj.x + (fromObj.width || 0) / 2
+                            const fromY = fromObj.y + (fromObj.height || 0) / 2
+                            const toX = toObj.x + (toObj.width || 0) / 2
+                            const toY = toObj.y + (toObj.height || 0) / 2
+
+                            const isSelected = selectedIds.includes(link.id)
+
+                            return (
+                                <Arrow
+                                    key={link.id}
+                                    points={[fromX, fromY, toX, toY]}
+                                    stroke={link.color}
+                                    fill={link.color}
+                                    strokeWidth={isSelected ? 4 : 2}
+                                    pointerLength={10}
+                                    pointerWidth={10}
+                                    hitStrokeWidth={20} // Easier to click
+                                    onClick={(e) => {
+                                        e.cancelBubble = true
+                                        if (e.evt.shiftKey) {
+                                            toggleSelection(link.id)
+                                        } else {
+                                            selectObject(link.id)
+                                        }
+                                    }}
+                                />
+                            )
+                        })}
+
+                        {visibleObjects.map((obj) => {
+                            const commonProps = {
+                                key: obj.id,
+                                id: obj.id,
+                                name: obj.id, // Important for finding node
+                                x: obj.x,
+                                y: obj.y,
+                                rotation: obj.rotation || 0,
+                                opacity: obj.opacity ?? 1,
+                                draggable: true,
+                                dragBoundFunc: (pos: { x: number, y: number }) => {
+                                    const stage = stageRef.current
+                                    if (!stage) return pos
+
+                                    const totalWidth = gridConfig.size * currentGridCountX
+                                    const totalHeight = gridConfig.size * currentGridCountY
+
+                                    const scaleX = stage.scaleX()
+                                    const stageX = stage.x()
+                                    const stageY = stage.y()
+
+                                    // Absolute to Local
+                                    let x = (pos.x - stageX) / scaleX
+                                    let y = (pos.y - stageY) / scaleX
+
+                                    // Bounds
+                                    const minX = 0
+                                    const minY = 0
+                                    const maxX = totalWidth - (obj.width || 0)
+                                    const maxY = totalHeight - (obj.height || 0)
+
+                                    if (x < minX) x = minX
+                                    if (x > maxX) x = maxX
+                                    if (y < minY) y = minY
+                                    if (y > maxY) y = maxY
+
+                                    return {
+                                        x: x * scaleX + stageX,
+                                        y: y * scaleX + stageY
+                                    }
+                                },
+                                onClick: (e: any) => {
+                                    e.cancelBubble = true
+
+                                    if (activeTool === 'connect') {
+                                        if (!connectSourceId) {
+                                            setConnectSourceId(obj.id)
+                                        } else {
+                                            if (connectSourceId !== obj.id) {
+                                                // Create Link
+                                                addLink({
+                                                    id: generateId(),
+                                                    from: connectSourceId,
+                                                    to: obj.id,
+                                                    color: 'black'
+                                                })
+                                                setConnectSourceId(null)
+                                                setActiveTool('select') // Optional: Auto switch back? Let's keep it for multiple connections
+                                            }
+                                        }
+                                    } else {
+                                        if (e.evt.shiftKey) {
+                                            toggleSelection(obj.id)
+                                        } else {
+                                            selectObject(obj.id)
+                                        }
+                                    }
+                                },
+                                onDragEnd: (e: any) => handleDragEnd(e, obj.id),
+                                // onTransform removed to prevent Double-Scale / Re-render loop bug during resize.
+                                // Updates will happen on onTransformEnd.
+                                onTransformEnd: (e: any) => handleTransformEnd(e, obj.id),
+                            }
+
+                            return (
+                                <RenderObject
+                                    key={obj.id}
+                                    obj={obj}
+                                    commonProps={commonProps}
+                                />
+                            )
+                        })}
+                        <Transformer
+                            ref={transformerRef}
+                            boundBoxFunc={(oldBox, newBox) => {
+                                const stage = stageRef.current
+                                // Safety: if stage doesn't exist yet, just return oldBox to invalid state
+                                if (!stage) return oldBox
+
+                                // 1. Get Stage Transforms (Scale & Position)
+                                const scaleX = stage.scaleX()
+                                const scaleY = stage.scaleY()
+                                const stageX = stage.x()
+                                const stageY = stage.y()
+
+                                // 2. Grid & World Constants
+                                const size = gridConfig.size || 500
+                                const countX = currentGridCountX || 60
+                                const countY = currentGridCountY || 40
+
+                                const totalWidth = size * countX
+                                const totalHeight = size * countY
+
+                                // 3. Convert NEW Absolute Box to Local Box
+                                //    (The inverse of: abs = local * scale + stage)
+                                let localX = (newBox.x - stageX) / scaleX
+                                let localY = (newBox.y - stageY) / scaleY
+                                let localWidth = newBox.width / scaleX
+                                let localHeight = newBox.height / scaleY
+
+                                // 4. Clamp in LOCAL Space
+                                const minX = 0
+                                const minY = 0
+                                const maxX = totalWidth
+                                const maxY = totalHeight
+
+                                // Clamp Right & Bottom
+                                if (localX + localWidth > maxX) {
+                                    localWidth = maxX - localX
+                                }
+                                if (localY + localHeight > maxY) {
+                                    localHeight = maxY - localY
+                                }
+
+                                // Clamp Left & Top
+                                if (localX < minX) {
+                                    const right = localX + localWidth
+                                    localX = minX
+                                    localWidth = right - localX
+                                }
+                                if (localY < minY) {
+                                    const bottom = localY + localHeight
+                                    localY = minY
+                                    localHeight = bottom - localY
+                                }
+
+                                // 5. Minimum Size Constraint (in Local Units)
+                                //    Using 'size' (e.g. 500mm) as the minimum
+                                if (localWidth < size || localHeight < size) {
+                                    return oldBox
+                                }
+
+                                // 6. Convert Back to Absolute Box for Return
+                                return {
+                                    ...newBox,
+                                    x: localX * scaleX + stageX,
+                                    y: localY * scaleY + stageY,
+                                    width: localWidth * scaleX,
+                                    height: localHeight * scaleY,
+                                }
+                            }}
+                        />
+                    </Layer>
+                </Stage>
+            )}
+
+            {/* Floor Selector */}
+            <div className="absolute top-4 left-4 flex flex-col gap-1 bg-white/90 backdrop-blur rounded-lg shadow-md border p-1 z-10">
+                {layers.map(layer => (
+                    <button
+                        key={layer.id}
+                        onClick={() => setActiveLayerId(layer.id)}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${activeLayerId === layer.id
+                            ? 'bg-blue-500 text-white shadow-sm'
+                            : 'hover:bg-gray-100 text-gray-600'
+                            }`}
+                    >
+                        {layer.name}
+                    </button>
+                ))}
+            </div>
+
+            {/* Scale/Grid Controls */}
+            <div className="absolute bottom-4 right-4 flex items-center gap-2">
+                {/* Auto-Fit Button */}
+                <button
+                    onClick={fitToScreen}
+                    className="bg-white p-2 rounded-lg shadow-md border hover:bg-gray-50 text-gray-700 transition-colors"
+                    title="Fit to Screen"
+                >
+                    <Maximize size={18} />
+                </button>
+            </div>
+
+            {/* Zoom Indicator */}
+            <div className="absolute bottom-4 left-4 flex flex-col gap-2">
+                <div className="bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-lg border border-gray-200 text-sm font-semibold text-gray-700 font-mono">
+                    {Math.round((scale / baseScale) * 100)}%
+                </div>
+            </div>
+
+            {/* Delete Hint */}
+            {selectedIds.length > 0 && !activeTool.includes('connect') && (
+                <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-red-50 text-red-600 px-3 py-1.5 rounded-full text-xs font-medium border border-red-100 animate-in fade-in slide-in-from-bottom-2">
+                    Press delete to remove ({selectedIds.length})
+                </div>
+            )}
+
+            {/* Connection Hint */}
+            {activeTool === 'connect' && (
+                <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg animate-in fade-in slide-in-from-bottom-4 z-50">
+                    {connectSourceId ? 'Click target object to connect' : 'Click source object to start connection'}
+                </div>
+            )}
+        </div>
+    )
+}
