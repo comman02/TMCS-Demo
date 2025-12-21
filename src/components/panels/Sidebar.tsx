@@ -48,7 +48,6 @@ const CATEGORIES = [
             { id: 'conveyor', icon: Cable, label: 'Conveyor' },
             { id: 'oht', icon: Box, label: 'OHT' },
             { id: 'lifter', icon: ArrowUpFromLine, label: 'Lifter' },
-            { id: 'stocker', icon: Container, label: 'Stocker' },
             { id: 'crane', icon: Construction, label: 'Crane' },
         ]
     },
@@ -57,6 +56,7 @@ const CATEGORIES = [
         label: 'Storage',
         items: [
             { id: 'buffer', icon: Box, label: 'Buffer' },
+            { id: 'stocker', icon: Container, label: 'Stocker' },
         ]
     },
     {
@@ -69,6 +69,7 @@ const CATEGORIES = [
             { id: 'port', icon: ArrowRightLeft, label: 'Port' },
             { id: 'wall', icon: BrickWall, label: 'Wall' },
             { id: 'pillar', icon: Columns, label: 'Pillar' },
+            { id: 'material', icon: Box, label: 'Material' },
         ]
     }
 ]

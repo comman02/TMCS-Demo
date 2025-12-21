@@ -300,7 +300,8 @@ export const useUIStore = create<UIState>()(
                 { id: 'stocker_l', name: 'Stocker Large', type: 'stocker', metadata: { capacity: 100, zoneId: 'Z-01' } },
                 { id: 'rack_std', name: 'Rack Standard', type: 'rack' },
                 { id: 'wall_std', name: 'Wall Standard', type: 'wall' },
-                { id: 'pillar_std', name: 'Pillar Standard', type: 'pillar' }
+                { id: 'pillar_std', name: 'Pillar Standard', type: 'pillar' },
+                { id: 'material_std', name: 'Material Standard', type: 'material' }
             ],
 
             addAssetPreset: (type, name) => set((state) => ({

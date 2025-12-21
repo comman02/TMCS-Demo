@@ -207,7 +207,7 @@ export function RenderObject({ obj, commonProps }: RenderObjectProps) {
     }
 
     // Storage & Infra
-    if (['stocker', 'rack', 'buffer', 'equipment', 'charger', 'oht', 'wall', 'pillar'].includes(obj.type)) {
+    if (['stocker', 'rack', 'buffer', 'equipment', 'charger', 'oht', 'wall', 'pillar', 'material'].includes(obj.type)) {
         return (
             <Group {...commonProps} width={obj.width} height={obj.height}>
                 <Rect
