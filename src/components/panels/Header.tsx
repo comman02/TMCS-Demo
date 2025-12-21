@@ -6,7 +6,7 @@ import { useFileSystem } from '@/hooks/useFileSystem'
 import { cn } from '@/lib/utils'
 
 export function Header() {
-    const { canvasObjects, setCanvasObjects } = useUIStore()
+    const { canvasObjects, setCanvasObjects, layers, activeLayerId, setActiveLayerId, viewMode, setViewMode } = useUIStore()
     // @ts-ignore
     const temporal = useStore(useUIStore.temporal, (state) => state)
     const { undo, redo, pastStates, futureStates } = temporal || { undo: () => { }, redo: () => { }, pastStates: [], futureStates: [] }
@@ -77,6 +77,42 @@ export function Header() {
                 <div className="w-px h-4 bg-gray-300 mx-1" />
                 <button className="p-1.5 hover:bg-white rounded-md text-gray-600 transition-all"><MousePointer2 size={18} /></button>
                 <button className="p-1.5 hover:bg-white rounded-md text-gray-600 transition-all"><Hand size={18} /></button>
+            </div>
+
+            {/* Floor & View Mode Selector */}
+            <div className="flex items-center gap-3 bg-gray-50 p-1.5 rounded-lg border border-gray-200">
+                <select
+                    className="bg-white border text-xs rounded px-2 py-1.5 font-medium min-w-[100px] focus:ring-2 focus:ring-blue-500 outline-none"
+                    value={activeLayerId}
+                    onChange={(e) => setActiveLayerId(e.target.value)}
+                >
+                    {layers.map(layer => (
+                        <option key={layer.uid} value={layer.id}>{layer.name}</option>
+                    ))}
+                </select>
+
+                <div className="h-4 w-px bg-gray-300" />
+
+                <div className="flex bg-gray-200 p-0.5 rounded-md">
+                    <button
+                        onClick={() => setViewMode('bottom')}
+                        className={cn(
+                            "px-3 py-1 text-xs font-medium rounded transition-all",
+                            viewMode === 'bottom' ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                        )}
+                    >
+                        Bottom
+                    </button>
+                    <button
+                        onClick={() => setViewMode('top')}
+                        className={cn(
+                            "px-3 py-1 text-xs font-medium rounded transition-all",
+                            viewMode === 'top' ? "bg-white text-blue-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                        )}
+                    >
+                        Top
+                    </button>
+                </div>
             </div>
 
             <div className="flex items-center gap-3">

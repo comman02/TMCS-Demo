@@ -41,6 +41,64 @@ const PROPERTY_SCHEMAS: Record<string, { label: string, key: string, type: 'text
     ]
 }
 
+// Helper Component for Numeric Inputs
+// Allows empty string, '-', or partial decimal inputs without resetting to 0
+function NumberInput({ value, onChange, className }: { value: number, onChange: (val: number) => void, className?: string }) {
+    const [localValue, setLocalValue] = useState(String(value))
+
+    // Sync local state with prop when prop changes (and we're not potentially typing)
+    // We only update if the parsed local value doesn't match the new prop value,
+    // to avoid wiping out "0." or "-." while typing
+    useEffect(() => {
+        const parsedLocal = parseFloat(localValue)
+        if (value !== parsedLocal) {
+            setLocalValue(String(value))
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [value])
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const raw = e.target.value
+        setLocalValue(raw)
+
+        // Only propagate if valid number
+        if (raw === '') return // Don't propagate empty (or decide if we want to send 0?)
+        if (raw === '-') return
+
+        const parsed = parseFloat(raw)
+        if (!isNaN(parsed)) {
+            onChange(parsed)
+        }
+    }
+
+    const handleBlur = () => {
+        // On blur, force sync to formatted value or 0 if empty
+        if (localValue === '' || localValue === '-') {
+            onChange(0)
+            setLocalValue('0')
+        } else {
+            const parsed = parseFloat(localValue)
+            if (!isNaN(parsed)) {
+                setLocalValue(String(parsed)) // Standardize format (e.g. "01" -> "1")
+            }
+        }
+    }
+
+    return (
+        <input
+            type="text" // Use text to allow "-" and empty
+            className={className}
+            value={localValue}
+            onChange={handleChange}
+            onBlur={handleBlur}
+            onKeyDown={(e) => {
+                // Stop propagation? Maybe not needed for simple inputs
+                if (e.key === 'Enter') handleBlur()
+            }}
+        />
+    )
+}
+
 export function Inspector() {
     const {
         selectedIds,
@@ -307,38 +365,34 @@ export function Inspector() {
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
                             <label className="text-xs text-gray-500">X</label>
-                            <input
-                                type="number"
+                            <NumberInput
                                 className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
                                 value={toDisplay(selectedObject.x)}
-                                onChange={(e) => handleChange('x', fromDisplay(Number(e.target.value)))}
+                                onChange={(val) => handleChange('x', fromDisplay(val))}
                             />
                         </div>
                         <div className="space-y-1">
                             <label className="text-xs text-gray-500">Y</label>
-                            <input
-                                type="number"
+                            <NumberInput
                                 className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
                                 value={toDisplay(selectedObject.y)}
-                                onChange={(e) => handleChange('y', fromDisplay(Number(e.target.value)))}
+                                onChange={(val) => handleChange('y', fromDisplay(val))}
                             />
                         </div>
                         <div className="space-y-1">
                             <label className="text-xs text-gray-500">Elevation (Z)</label>
-                            <input
-                                type="number"
+                            <NumberInput
                                 className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
                                 value={toDisplay(selectedObject.z || 0)}
-                                onChange={(e) => handleChange('z', fromDisplay(Number(e.target.value)))}
+                                onChange={(val) => handleChange('z', fromDisplay(val))}
                             />
                         </div>
                         <div className="space-y-1">
                             <label className="text-xs text-gray-500">Rotation (°)</label>
-                            <input
-                                type="number"
+                            <NumberInput
                                 className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
                                 value={selectedObject.rotation || 0}
-                                onChange={(e) => handleChange('rotation', Number(e.target.value))}
+                                onChange={(val) => handleChange('rotation', val)}
                             />
                         </div>
                     </div>
@@ -355,29 +409,26 @@ export function Inspector() {
                         <div className="grid grid-cols-3 gap-2">
                             <div className="space-y-1">
                                 <label className="text-xs text-gray-500">Width (W)</label>
-                                <input
-                                    type="number"
+                                <NumberInput
                                     className="w-full px-2 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
                                     value={toDisplay(selectedObject.width)}
-                                    onChange={(e) => handleChange('width', fromDisplay(Number(e.target.value)))}
+                                    onChange={(val) => handleChange('width', fromDisplay(val))}
                                 />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-xs text-gray-500">Length (L)</label>
-                                <input
-                                    type="number"
+                                <NumberInput
                                     className="w-full px-2 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
                                     value={toDisplay(selectedObject.height!)}
-                                    onChange={(e) => handleChange('height', fromDisplay(Number(e.target.value)))}
+                                    onChange={(val) => handleChange('height', fromDisplay(val))}
                                 />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-xs text-gray-500">Height (H)</label>
-                                <input
-                                    type="number"
+                                <NumberInput
                                     className="w-full px-2 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
                                     value={toDisplay(selectedObject.depth || 0)}
-                                    onChange={(e) => handleChange('depth', fromDisplay(Number(e.target.value)))}
+                                    onChange={(val) => handleChange('depth', fromDisplay(val))}
                                 />
                             </div>
                         </div>
@@ -414,14 +465,22 @@ export function Inspector() {
                                                     <option key={opt} value={opt}>{opt}</option>
                                                 ))}
                                             </select>
+                                        ) : field.type === 'number' ? (
+                                            <NumberInput
+                                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
+                                                value={selectedObject.metadata?.[field.key] || 0}
+                                                onChange={(val) => {
+                                                    const newMetadata = { ...selectedObject.metadata, [field.key]: val }
+                                                    updateCanvasObject(selectedObject.id, { metadata: newMetadata })
+                                                }}
+                                            />
                                         ) : (
                                             <input
                                                 type={field.type}
                                                 className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
                                                 value={selectedObject.metadata?.[field.key] || ''}
                                                 onChange={(e) => {
-                                                    const val = field.type === 'number' ? Number(e.target.value) : e.target.value
-                                                    const newMetadata = { ...selectedObject.metadata, [field.key]: val }
+                                                    const newMetadata = { ...selectedObject.metadata, [field.key]: e.target.value }
                                                     updateCanvasObject(selectedObject.id, { metadata: newMetadata })
                                                 }}
                                             />
@@ -512,6 +571,22 @@ export function Inspector() {
                                         </div>
                                     </div>
                                     <div className="space-y-1">
+                                        <label className="text-xs text-gray-500">Font Family</label>
+                                        <select
+                                            className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                                            value={selectedObject.fontFamily || 'Arial'}
+                                            onChange={(e) => handleChange('fontFamily', e.target.value)}
+                                        >
+                                            <option value="Arial">Arial</option>
+                                            <option value="Verdana">Verdana</option>
+                                            <option value="Times New Roman">Times New Roman</option>
+                                            <option value="Courier New">Courier New</option>
+                                            <option value="Georgia">Georgia</option>
+                                            <option value="Impact">Impact</option>
+                                            <option value="Inter">Inter</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
                                         <label className="text-xs text-gray-500">Font Size</label>
                                         <input
                                             type="number"
@@ -539,6 +614,22 @@ export function Inspector() {
                                 value={selectedObject.text}
                                 onChange={(e) => handleChange('text', e.target.value)}
                             />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Font Family</label>
+                            <select
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                                value={selectedObject.fontFamily || 'Arial'}
+                                onChange={(e) => handleChange('fontFamily', e.target.value)}
+                            >
+                                <option value="Arial">Arial</option>
+                                <option value="Verdana">Verdana</option>
+                                <option value="Times New Roman">Times New Roman</option>
+                                <option value="Courier New">Courier New</option>
+                                <option value="Georgia">Georgia</option>
+                                <option value="Impact">Impact</option>
+                                <option value="Inter">Inter</option>
+                            </select>
                         </div>
                         <div className="space-y-1">
                             <label className="text-xs text-gray-500">Font Size</label>
@@ -652,17 +743,19 @@ export function Inspector() {
         const activeLayer = layers.find(l => l.id === activeLayerId)
 
         if (activeLayer) {
-            if (activeLayer.type === 'common') {
-                // COMMON / FAB PROPERTIES
-                headerContent = (
-                    <div className="flex items-center gap-2">
-                        <FactoryIcon size={16} />
-                        <span className="font-semibold text-sm text-gray-900">Fab Properties</span>
-                    </div>
-                )
-                bodyContent = (
-                    <div className="space-y-5">
-                        {/* Grid Configuration */}
+            headerContent = (
+                <div className="flex items-center gap-2">
+                    {activeLayer.type === 'common' ? <FactoryIcon size={16} /> : <Layers size={16} />}
+                    <span className="font-semibold text-sm text-gray-900">
+                        {activeLayer.type === 'common' ? 'Fab Properties' : 'Floor Properties'}
+                    </span>
+                </div>
+            )
+
+            bodyContent = (
+                <div className="space-y-5">
+                    {/* Common: Global Grid Config */}
+                    {activeLayer.type === 'common' && (
                         <div className="space-y-3">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -682,122 +775,95 @@ export function Inspector() {
                             <div className="space-y-2">
                                 <div className="space-y-1">
                                     <label className="text-xs text-gray-500">Grid Unit Size ({gridConfig.unit})</label>
-                                    <input
-                                        type="number"
+                                    <NumberInput
                                         className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
                                         value={toDisplay(gridConfig.size)}
-                                        onChange={(e) => {
-                                            setGridConfig({ size: fromDisplay(Number(e.target.value)) })
+                                        onChange={(val) => {
+                                            setGridConfig({ size: fromDisplay(val) })
                                         }}
                                     />
                                 </div>
                             </div>
-                        </div>
-
-                        <div className="bg-blue-50/50 p-3 rounded-md text-xs text-blue-700 leading-relaxed border border-blue-100">
-                            <strong>Default Layer:</strong> Objects placed here are visible on all floors. Use this for common structural elements like pillars or main walls.
-                        </div>
-                    </div>
-                )
-            } else {
-                // SPECIFIC FLOOR PROPERTIES
-                headerContent = (
-                    <div className="flex items-center gap-2">
-                        <Layers size={16} />
-                        <span className="font-semibold text-sm text-gray-900">Floor Properties</span>
-                    </div>
-                )
-                bodyContent = (
-                    <div className="space-y-5">
-                        {/* Identity */}
-                        <div className="space-y-3">
-                            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                <Hash size={12} /> Identity
+                            <div className="bg-blue-50/50 p-3 rounded-md text-xs text-blue-700 leading-relaxed border border-blue-100">
+                                <strong>Default Layer:</strong> Objects placed here are visible on all floors.
                             </div>
-                            <div className="space-y-2">
-                                <div className="space-y-1">
-                                    <label className="text-xs text-gray-500">Floor Name</label>
-                                    <input
-                                        type="text"
-                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                                        value={activeLayer.name}
-                                        onChange={(e) => updateLayer(activeLayer.id, { name: e.target.value })}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-gray-500">ID (Unique)</label>
-                                    <input
-                                        type="text"
-                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
-                                        value={activeLayer.id}
-                                        onChange={(e) => renameLayer(activeLayer.id, e.target.value)}
-                                    />
-                                </div>
-                            </div>
+                            <div className="h-px bg-gray-100" />
                         </div>
+                    )}
 
-                        <div className="h-px bg-gray-100" />
-
-                        {/* Geometry */}
-                        <div className="space-y-3">
-                            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                <Maximize size={12} /> Geometry
+                    {/* Identity (All Layers) */}
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <Hash size={12} /> Identity
+                        </div>
+                        <div className="space-y-2">
+                            <div className="space-y-1">
+                                <label className="text-xs text-gray-500">Floor Name</label>
+                                <input
+                                    type="text"
+                                    className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                    value={activeLayer.name}
+                                    onChange={(e) => updateLayer(activeLayer.id, { name: e.target.value })}
+                                />
                             </div>
                             <div className="space-y-1">
-                                <label className="text-xs text-gray-500">Floor Height ({gridConfig.unit})</label>
+                                <label className="text-xs text-gray-500">ID (Unique)</label>
                                 <input
-                                    type="number"
-                                    className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                                    value={toDisplay(activeLayer.height || 0)}
-                                    onChange={(e) => updateLayer(activeLayer.id, { height: fromDisplay(Number(e.target.value)) })}
+                                    type="text"
+                                    className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
+                                    value={activeLayer.id}
+                                    onChange={(e) => renameLayer(activeLayer.id, e.target.value)}
+                                // Maybe disable for 'default' to prevent bugs?
+                                // disabled={activeLayer.type === 'common'}
                                 />
                             </div>
                         </div>
+                    </div>
 
-                        {/* Grid Config */}
-                        <div className="space-y-3">
-                            <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                <Grid3X3 size={12} /> Grid Layout
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1">
-                                    <label className="text-xs text-gray-500">Columns (X)</label>
-                                    <input
-                                        type="number"
-                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                                        value={activeLayer.gridCountX || 60}
-                                        onChange={(e) => updateLayer(activeLayer.id, { gridCountX: Number(e.target.value) })}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-gray-500">Rows (Y)</label>
-                                    <input
-                                        type="number"
-                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                                        value={activeLayer.gridCountY || 40}
-                                        onChange={(e) => updateLayer(activeLayer.id, { gridCountY: Number(e.target.value) })}
-                                    />
-                                </div>
-                            </div>
-                            <div className="text-[10px] text-right text-gray-400 font-mono">
-                                {(() => {
-                                    const w = (activeLayer.gridCountX || 60) * gridConfig.size
-                                    const h = (activeLayer.gridCountY || 40) * gridConfig.size
+                    <div className="h-px bg-gray-100" />
 
-                                    const format = (val: number) => {
-                                        switch (gridConfig.unit) {
-                                            case 'cm': return (val / 10).toLocaleString()
-                                            case 'm': return (val / 1000).toLocaleString()
-                                            case 'km': return (val / 1000000).toLocaleString()
-                                            default: return val.toLocaleString()
-                                        }
-                                    }
-                                    return `${format(w)} x ${format(h)} ${gridConfig.unit}`
-                                })()}
+                    {/* Geometry (All Layers) */}
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <Maximize size={12} /> Geometry
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Floor Height ({gridConfig.unit})</label>
+                            <NumberInput
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                value={toDisplay(activeLayer.height || 0)}
+                                onChange={(val) => updateLayer(activeLayer.id, { height: fromDisplay(val) })}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Grid Config (Local X/Y) */}
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <Grid3X3 size={12} /> Grid Layout
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                                <label className="text-xs text-gray-500">Columns (X)</label>
+                                <NumberInput
+                                    className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                    value={activeLayer.gridCountX || 60}
+                                    onChange={(val) => updateLayer(activeLayer.id, { gridCountX: val })}
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs text-gray-500">Rows (Y)</label>
+                                <NumberInput
+                                    className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                    value={activeLayer.gridCountY || 40}
+                                    onChange={(val) => updateLayer(activeLayer.id, { gridCountY: val })}
+                                />
                             </div>
                         </div>
                     </div>
-                )
+                </div>
+            )
+            if (activeLayer.type !== 'common') {
                 footerContent = (
                     <button
                         onClick={() => removeLayer(activeLayer.id)}

@@ -25,6 +25,8 @@ export interface CanvasObject {
     textColor?: string
     showLabel?: boolean
     metadata?: Record<string, any> // Type-specific properties
+    fontFamily?: string
+    subLayer?: 'bottom' | 'top' // View mode: Bottom (Floor) vs Top (Ceiling)
 }
 
 export interface CanvasLink {
@@ -53,6 +55,7 @@ interface UIState {
     gridConfig: { size: number; unit: 'mm' | 'cm' | 'm' | 'km' }
     layers: FabLayer[]
     activeLayerId: string
+    viewMode: 'bottom' | 'top' // New View Mode for Floor vs Ceiling
 
     canvasObjects: CanvasObject[]
     canvasLinks: CanvasLink[]
@@ -73,6 +76,7 @@ interface UIState {
     removeLayer: (id: string) => void
     renameLayer: (oldId: string, newId: string) => void
     setActiveLayerId: (id: string) => void
+    setViewMode: (mode: 'bottom' | 'top') => void
 
     // Selection
     selectObject: (id: string | null) => void
@@ -127,6 +131,7 @@ export const useUIStore = create<UIState>()(
                 { uid: 'sys-1f', id: '1f', name: '1F', type: 'floor', order: 0, height: 4000, gridCountX: 60, gridCountY: 40 }
             ],
             activeLayerId: '1f',
+            viewMode: 'bottom',
 
             canvasObjects: [],
             canvasLinks: [],
@@ -136,18 +141,43 @@ export const useUIStore = create<UIState>()(
             setGridConfig: (config) => set((state) => ({
                 gridConfig: { ...state.gridConfig, ...config }
             })),
-            addLayer: (name) => set((state) => ({
-                layers: [...state.layers, {
+            addLayer: (name) => set((state) => {
+                const newLayerId = `${name}_${Math.random().toString(36).substr(2, 9)}`
+
+                // Find Common/Default Layer to inherit settings
+                const commonLayer = state.layers.find(l => l.type === 'common')
+
+                // Default values fallback
+                const initialHeight = commonLayer ? commonLayer.height : 4000
+                const initialGridX = commonLayer ? commonLayer.gridCountX : 60
+                const initialGridY = commonLayer ? commonLayer.gridCountY : 40
+
+                const newLayer: FabLayer = {
                     uid: Math.random().toString(36).substr(2, 9),
-                    id: `${name}_${Math.random().toString(36).substr(2, 9)}`, // NAME_UUID format
+                    id: newLayerId,
                     name,
                     type: 'floor',
                     order: state.layers.length,
-                    height: 4000,
-                    gridCountX: 60,
-                    gridCountY: 40
-                }]
-            })),
+                    height: initialHeight,
+                    gridCountX: initialGridX,
+                    gridCountY: initialGridY
+                }
+
+                // CLONE Objects from Common Layer
+                const sourceLayerId = commonLayer ? commonLayer.id : 'default'
+                const defaultObjects = state.canvasObjects.filter(obj => obj.layerId === sourceLayerId)
+
+                const clonedObjects = defaultObjects.map(obj => ({
+                    ...obj,
+                    id: `${obj.type}_${Math.random().toString(36).substr(2, 9)}`, // New Unique ID
+                    layerId: newLayerId // Assign to new layer
+                }))
+
+                return {
+                    layers: [...state.layers, newLayer],
+                    canvasObjects: [...state.canvasObjects, ...clonedObjects]
+                }
+            }),
             updateLayer: (id, updates) => set((state) => ({
                 layers: state.layers.map(l => l.id === id ? { ...l, ...updates } : l)
             })),
@@ -191,6 +221,7 @@ export const useUIStore = create<UIState>()(
             }),
 
             setActiveLayerId: (id) => set({ activeLayerId: id, selectedIds: [] }), // Clear selection when switching floors
+            setViewMode: (mode) => set({ viewMode: mode }),
 
             setActiveTool: (tool) => set({ activeTool: tool }),
 
@@ -252,11 +283,19 @@ export const useUIStore = create<UIState>()(
 
             // Asset Library
             activeAssetId: null,
-            setActiveAssetId: (id) => set({ activeAssetId: id, selectedIds: [], activeLayerId: '' }), // Clear canvas/layer selection
+            setActiveAssetId: (id) => set({ activeAssetId: id, selectedIds: [] }), // Clear canvas selection
 
             assets: [
                 { id: 'agv_std', name: 'AGV Standard', type: 'agv' },
                 { id: 'amr_std', name: 'AMR Standard', type: 'amr' },
+                { id: 'oht_std', name: 'OHT Standard', type: 'oht' },
+                { id: 'oht_rail_std', name: 'OHT Rail Standard', type: 'rail' },
+                { id: 'lifter_std', name: 'Lifter Standard', type: 'lifter' },
+                { id: 'eq_std', name: 'Equipment Standard', type: 'equipment' },
+                { id: 'crane_std', name: 'Crane Standard', type: 'crane' },
+                { id: 'port_std', name: 'Port Standard', type: 'port' },
+                { id: 'buffer_std', name: 'Buffer Standard', type: 'buffer' },
+                { id: 'charger_std', name: 'Charger Standard', type: 'charger' },
                 { id: 'cv_std', name: 'Conveyor Standard', type: 'conveyor' },
                 { id: 'stocker_l', name: 'Stocker Large', type: 'stocker', metadata: { capacity: 100, zoneId: 'Z-01' } },
                 { id: 'rack_std', name: 'Rack Standard', type: 'rack' },

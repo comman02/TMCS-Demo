@@ -24,6 +24,7 @@ export function RenderObject({ obj, commonProps }: RenderObjectProps) {
                         align="center"
                         verticalAlign="middle"
                         fontSize={obj.fontSize || 12}
+                        fontFamily={obj.fontFamily || 'Arial'}
                         fill={obj.textColor || '#ffffff'}
                         listening={false}
                     />
@@ -49,6 +50,7 @@ export function RenderObject({ obj, commonProps }: RenderObjectProps) {
                         align="center"
                         verticalAlign="middle"
                         fontSize={obj.fontSize || 12}
+                        fontFamily={obj.fontFamily || 'Arial'}
                         fill={obj.textColor || '#ffffff'}
                         listening={false}
                     />
@@ -62,6 +64,7 @@ export function RenderObject({ obj, commonProps }: RenderObjectProps) {
                 {...commonProps}
                 text={obj.text}
                 fontSize={obj.fontSize}
+                fontFamily={obj.fontFamily || 'Arial'}
                 width={obj.width}
                 height={obj.height}
                 fill={obj.fill || 'black'}
@@ -103,6 +106,7 @@ export function RenderObject({ obj, commonProps }: RenderObjectProps) {
                         align="center"
                         verticalAlign="middle"
                         fontSize={obj.fontSize || 12}
+                        fontFamily={obj.fontFamily || 'Arial'}
                         fill={obj.textColor || '#ffffff'}
                         listening={false}
                     />
@@ -138,6 +142,7 @@ export function RenderObject({ obj, commonProps }: RenderObjectProps) {
                         align="center"
                         verticalAlign="middle"
                         fontSize={obj.fontSize || 12}
+                        fontFamily={obj.fontFamily || 'Arial'}
                         fill={obj.textColor || '#ffffff'}
                         listening={false}
                     />
@@ -165,6 +170,7 @@ export function RenderObject({ obj, commonProps }: RenderObjectProps) {
                         align="center"
                         verticalAlign="middle"
                         fontSize={obj.fontSize || 12}
+                        fontFamily={obj.fontFamily || 'Arial'}
                         fill={obj.textColor || '#ffffff'}
                         listening={false}
                     />
@@ -191,6 +197,7 @@ export function RenderObject({ obj, commonProps }: RenderObjectProps) {
                         align="center"
                         verticalAlign="middle"
                         fontSize={obj.fontSize || 12}
+                        fontFamily={obj.fontFamily || 'Arial'}
                         fill={obj.textColor || '#ffffff'}
                         listening={false}
                     />
@@ -218,6 +225,7 @@ export function RenderObject({ obj, commonProps }: RenderObjectProps) {
                         align="center"
                         verticalAlign="middle"
                         fontSize={obj.fontSize || 12}
+                        fontFamily={obj.fontFamily || 'Arial'}
                         fill={obj.textColor || '#ffffff'}
                         listening={false}
                     />
@@ -246,6 +254,7 @@ export function RenderObject({ obj, commonProps }: RenderObjectProps) {
                         align="center"
                         verticalAlign="middle"
                         fontSize={obj.fontSize || 12}
+                        fontFamily={obj.fontFamily || 'Arial'}
                         fill={obj.textColor || '#ffffff'}
                         listening={false}
                     />

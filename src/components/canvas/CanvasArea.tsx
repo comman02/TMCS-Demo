@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { Stage, Layer, Transformer, Arrow } from 'react-konva'
 import { KonvaEventObject } from 'konva/lib/Node'
 import { Maximize } from 'lucide-react'
@@ -32,6 +32,7 @@ export function CanvasArea() {
         layers,
         activeLayerId,
         setActiveLayerId,
+        viewMode,
         assets
     } = useUIStore()
 
@@ -45,14 +46,23 @@ export function CanvasArea() {
     const currentGridCountX = activeLayer?.gridCountX || 60
     const currentGridCountY = activeLayer?.gridCountY || 40
 
-    // Filter objects: Show objects on current layer AND objects on any 'common' layer (Default)
-    const visibleObjects = canvasObjects.filter(obj => {
-        if (obj.layerId === activeLayerId) return true
-        // If object has no layerId, it might be legacy; show it only if active layer is '1f' or 'default'? 
-        // Better to assign them. For now, strict check:
-        const objLayer = layers.find(l => l.id === obj.layerId)
-        return objLayer?.type === 'common'
-    })
+    // Filter objects: Show objects on current layer ONLY
+    const visibleObjects = useMemo(() => {
+        console.log('Filtering Objects:', { activeLayerId, viewMode, total: canvasObjects.length, layers })
+        return canvasObjects.filter(obj => {
+            // 1. Floor Logic: Must match Active Layer
+            // Legacy Fix: If layerId is missing, assume '1f' (default active layer)
+            const objectLayerId = obj.layerId || '1f'
+
+            console.log('Obj Check:', { id: obj.id, type: obj.type, layer: obj.layerId, active: activeLayerId, match: objectLayerId === activeLayerId })
+
+            if (objectLayerId !== activeLayerId) return false
+
+            // 2. Sub-Layer Logic: Must match View Mode (Bottom vs Top)
+            const objSubLayer = obj.subLayer || 'bottom'
+            return objSubLayer === viewMode
+        })
+    }, [canvasObjects, activeLayerId, viewMode, layers])
 
     // Update transformer when selection changes (Multi-select support)
     useEffect(() => {
@@ -189,6 +199,9 @@ export function CanvasArea() {
             case 'amr':
                 fill = type === 'agv' ? '#f59e0b' : '#10b981'
                 break
+            case 'oht':
+                fill = '#ec4899' // Pink-500
+                break
             case 'conveyor':
             case 'rail':
                 // Conveyors/Rails might look better as 1xN or Nx1, but user requested "size of 1 grid cell".
@@ -242,6 +255,12 @@ export function CanvasArea() {
 
         const name = type.charAt(0).toUpperCase() + type.slice(1)
 
+        // Use direct store access to avoid stale closures in event handler
+        const currentActiveLayerId = useUIStore.getState().activeLayerId
+        const currentViewMode = useUIStore.getState().viewMode
+
+        console.log('Drop Event (Direct):', { type, currentActiveLayerId, currentViewMode })
+
         let newObj = {
             id: `${name}_${generateId()}`,
             name,
@@ -250,16 +269,19 @@ export function CanvasArea() {
             y: stageY,
             z: 0,
             rotation: 0,
-            opacity: 1,
+            opacity: (type === 'rect' || type === 'circle') ? 0.5 : 1,
             showLabel: false,
             textColor: '#ffffff',
             fill,
             width,
             height,
-            depth: height, // Initial 3D height same as Y size? Or grid size? Let's use height (size) for now.
+            depth: height,
             radius,
             text: 'Text',
-            fontSize: gridConfig.size / 5, // auto-scale font size slightly? or keep fixed? 20 is fine but maybe large for small grids. Let's keep 20 for now or resize.
+            fontSize: 14, // Windows default size
+            fontFamily: 'Arial',
+            layerId: currentActiveLayerId,
+            subLayer: currentViewMode,
         }
 
         // Apply Preset Metadata Overrides
@@ -347,6 +369,8 @@ export function CanvasArea() {
                                 setActiveTool('select')
                             }
                             selectObject(null)
+                            // Also clear active asset so Inspector falls back to Layer/Fab properties
+                            useUIStore.getState().setActiveAssetId(null)
                         }
                     }}
                 >
@@ -555,21 +579,7 @@ export function CanvasArea() {
                 </Stage>
             )}
 
-            {/* Floor Selector */}
-            <div className="absolute top-4 left-4 flex flex-col gap-1 bg-white/90 backdrop-blur rounded-lg shadow-md border p-1 z-10">
-                {layers.map(layer => (
-                    <button
-                        key={layer.id}
-                        onClick={() => setActiveLayerId(layer.id)}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${activeLayerId === layer.id
-                            ? 'bg-blue-500 text-white shadow-sm'
-                            : 'hover:bg-gray-100 text-gray-600'
-                            }`}
-                    >
-                        {layer.name}
-                    </button>
-                ))}
-            </div>
+            {/* Floor Selector Removed - Moved to Header */}
 
             {/* Scale/Grid Controls */}
             <div className="absolute bottom-4 right-4 flex items-center gap-2">
