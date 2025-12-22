@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useUIStore } from '@/store/useUIStore'
-import { Factory as FactoryIcon, Layers, Hash, Move, Maximize, Palette, Type, Trash2, ArrowRightLeft, Group as GroupIcon, Ungroup, AlignLeft, AlignCenter, AlignRight, ArrowUpToLine, AlignVerticalJustifyCenter, ArrowDownToLine, Pin, PinOff, Grid3X3 } from 'lucide-react'
+import { Factory as FactoryIcon, Layers, Hash, Move, Maximize, Palette, Type, Trash2, ArrowRightLeft, Group as GroupIcon, Ungroup, AlignLeft, AlignCenter, AlignRight, ArrowUpToLine, AlignVerticalJustifyCenter, ArrowDownToLine, Pin, PinOff, Grid3X3, Image as ImageIcon, Box } from 'lucide-react'
 
 const PROPERTY_SCHEMAS: Record<string, { label: string, key: string, type: 'text' | 'number' | 'select', options?: string[] }[]> = {
     agv: [
@@ -201,7 +201,7 @@ export function Inspector() {
     }
 
     // Handlers
-    const handleChange = (key: string, value: any) => {
+    const handleChange = (key: string, value: unknown) => {
         if (selectedId) updateCanvasObject(selectedId, { [key]: value })
     }
 
@@ -454,7 +454,7 @@ export function Inspector() {
                                         {field.type === 'select' ? (
                                             <select
                                                 className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
-                                                value={selectedObject.metadata?.[field.key] || ''}
+                                                value={(selectedObject.metadata?.[field.key] as string) || ''}
                                                 onChange={(e) => {
                                                     const newMetadata = { ...selectedObject.metadata, [field.key]: e.target.value }
                                                     updateCanvasObject(selectedObject.id, { metadata: newMetadata })
@@ -468,7 +468,7 @@ export function Inspector() {
                                         ) : field.type === 'number' ? (
                                             <NumberInput
                                                 className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
-                                                value={selectedObject.metadata?.[field.key] || 0}
+                                                value={(selectedObject.metadata?.[field.key] as number) || 0}
                                                 onChange={(val) => {
                                                     const newMetadata = { ...selectedObject.metadata, [field.key]: val }
                                                     updateCanvasObject(selectedObject.id, { metadata: newMetadata })
@@ -478,7 +478,7 @@ export function Inspector() {
                                             <input
                                                 type={field.type}
                                                 className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
-                                                value={selectedObject.metadata?.[field.key] || ''}
+                                                value={(selectedObject.metadata?.[field.key] as string) || ''}
                                                 onChange={(e) => {
                                                     const newMetadata = { ...selectedObject.metadata, [field.key]: e.target.value }
                                                     updateCanvasObject(selectedObject.id, { metadata: newMetadata })
@@ -491,6 +491,99 @@ export function Inspector() {
                         </div>
                     )
                 })()}
+
+                <div className="h-px bg-gray-100" />
+
+                {/* Appearance (Images) */}
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <ImageIcon size={12} /> Appearance
+                    </div>
+
+                    {/* 2D Image */}
+                    <div className="space-y-1">
+                        <label className="text-xs text-gray-500">2D Image (Top View)</label>
+                        <div className="flex items-center gap-2">
+                            {selectedObject.image2d ? (
+                                <div className="relative w-10 h-10 border rounded bg-gray-50 overflow-hidden group">
+                                    <img src={selectedObject.image2d} alt="2D" className="w-full h-full object-cover" />
+                                    <button
+                                        onClick={() => handleChange('image2d', undefined)}
+                                        className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white"
+                                    >
+                                        <Trash2 size={12} />
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="w-10 h-10 border rounded border-dashed flex items-center justify-center bg-gray-50 text-gray-400">
+                                    <ImageIcon size={16} />
+                                </div>
+                            )}
+                            <div className="flex-1">
+                                <label className="cursor-pointer text-xs bg-white border px-2 py-1.5 rounded hover:bg-gray-50 flex items-center justify-center gap-1 transition-colors">
+                                    <span>Upload 2D...</span>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0]
+                                            if (file) {
+                                                const reader = new FileReader()
+                                                reader.onload = (ev) => {
+                                                    handleChange('image2d', ev.target?.result as string)
+                                                }
+                                                reader.readAsDataURL(file)
+                                            }
+                                        }}
+                                    />
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 3D Image (Placeholder for now) */}
+                    <div className="space-y-1">
+                        <label className="text-xs text-gray-500">3D Image (Model/Texture)</label>
+                        <div className="flex items-center gap-2">
+                            {selectedObject.image3d ? (
+                                <div className="relative w-10 h-10 border rounded bg-gray-50 overflow-hidden group">
+                                    <img src={selectedObject.image3d} alt="3D" className="w-full h-full object-cover" />
+                                    <button
+                                        onClick={() => handleChange('image3d', undefined)}
+                                        className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white"
+                                    >
+                                        <Trash2 size={12} />
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="w-10 h-10 border rounded border-dashed flex items-center justify-center bg-gray-50 text-gray-400">
+                                    <Box size={16} />
+                                </div>
+                            )}
+                            <div className="flex-1">
+                                <label className="cursor-pointer text-xs bg-white border px-2 py-1.5 rounded hover:bg-gray-50 flex items-center justify-center gap-1 transition-colors">
+                                    <span>Upload 3D...</span>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0]
+                                            if (file) {
+                                                const reader = new FileReader()
+                                                reader.onload = (ev) => {
+                                                    handleChange('image3d', ev.target?.result as string)
+                                                }
+                                                reader.readAsDataURL(file)
+                                            }
+                                        }}
+                                    />
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <div className="h-px bg-gray-100" />
 
@@ -648,7 +741,6 @@ export function Inspector() {
             <button
                 onClick={() => {
                     if (selectedId) {
-                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
                         updateCanvasObject(selectedId, { ...selectedObject })
                         removeCanvasObject(selectedId)
                     }
@@ -706,7 +798,7 @@ export function Inspector() {
                                             {field.type === 'select' ? (
                                                 <select
                                                     className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
-                                                    value={selectedAsset.metadata?.[field.key] || ''}
+                                                    value={(selectedAsset.metadata?.[field.key] as string) || ''}
                                                     onChange={(e) => {
                                                         const newMetadata = { ...selectedAsset.metadata, [field.key]: e.target.value }
                                                         updateAssetPreset(selectedAsset.id, { metadata: newMetadata })
@@ -721,7 +813,7 @@ export function Inspector() {
                                                 <input
                                                     type={field.type}
                                                     className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white"
-                                                    value={selectedAsset.metadata?.[field.key] || ''}
+                                                    value={(selectedAsset.metadata?.[field.key] as string | number) || ''}
                                                     onChange={(e) => {
                                                         const val = field.type === 'number' ? Number(e.target.value) : e.target.value
                                                         const newMetadata = { ...selectedAsset.metadata, [field.key]: val }
@@ -764,7 +856,7 @@ export function Inspector() {
                                 <select
                                     className="text-xs border rounded px-1 py-0.5 bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     value={gridConfig.unit}
-                                    onChange={(e) => setGridConfig({ unit: e.target.value as any })}
+                                    onChange={(e) => setGridConfig({ unit: e.target.value as 'mm' | 'cm' | 'm' | 'km' })}
                                 >
                                     <option value="mm">mm</option>
                                     <option value="cm">cm</option>
@@ -842,22 +934,58 @@ export function Inspector() {
                         <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
                             <Grid3X3 size={12} /> Grid Layout
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1">
-                                <label className="text-xs text-gray-500">Columns (X)</label>
-                                <NumberInput
-                                    className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                                    value={activeLayer.gridCountX || 60}
-                                    onChange={(val) => updateLayer(activeLayer.id, { gridCountX: val })}
-                                />
+                        {/* Auto-Grid from Size */}
+                        <div className="space-y-2">
+                            <label className="text-[10px] uppercase font-bold text-gray-400">Physical Size ({gridConfig.unit})</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-500">Width</label>
+                                    <NumberInput
+                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                        value={toDisplay((activeLayer.gridCountX || 60) * gridConfig.size)}
+                                        onChange={(val) => {
+                                            const totalSize = fromDisplay(val)
+                                            const count = Math.round(totalSize / gridConfig.size)
+                                            updateLayer(activeLayer.id, { gridCountX: count > 0 ? count : 1 })
+                                        }}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-500">Length</label>
+                                    <NumberInput
+                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                        value={toDisplay((activeLayer.gridCountY || 40) * gridConfig.size)}
+                                        onChange={(val) => {
+                                            const totalSize = fromDisplay(val)
+                                            const count = Math.round(totalSize / gridConfig.size)
+                                            updateLayer(activeLayer.id, { gridCountY: count > 0 ? count : 1 })
+                                        }}
+                                    />
+                                </div>
                             </div>
-                            <div className="space-y-1">
-                                <label className="text-xs text-gray-500">Rows (Y)</label>
-                                <NumberInput
-                                    className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                                    value={activeLayer.gridCountY || 40}
-                                    onChange={(val) => updateLayer(activeLayer.id, { gridCountY: val })}
-                                />
+                        </div>
+
+                        <div className="h-px bg-gray-50 border-t border-dashed border-gray-200" />
+
+                        <div className="space-y-2">
+                            <label className="text-[10px] uppercase font-bold text-gray-400">Grid Cells</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-500">Columns (X)</label>
+                                    <NumberInput
+                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                        value={activeLayer.gridCountX || 60}
+                                        onChange={(val) => updateLayer(activeLayer.id, { gridCountX: val })}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-500">Rows (Y)</label>
+                                    <NumberInput
+                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                        value={activeLayer.gridCountY || 40}
+                                        onChange={(val) => updateLayer(activeLayer.id, { gridCountY: val })}
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>

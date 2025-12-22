@@ -1,9 +1,7 @@
 export function useFileSystem() {
     const showSaveFilePicker = async (data: string) => {
         try {
-            // @ts-ignore
             if (window.showSaveFilePicker) {
-                // @ts-ignore
                 const handle = await window.showSaveFilePicker({
                     suggestedName: `layout-${new Date().toISOString().slice(0, 10)}.json`,
                     types: [{

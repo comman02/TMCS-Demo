@@ -1,19 +1,21 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { Stage, Layer, Transformer, Arrow } from 'react-konva'
+import Konva from 'konva'
 import { KonvaEventObject } from 'konva/lib/Node'
-import { Maximize } from 'lucide-react'
+import { Maximize, Plus, Minus } from 'lucide-react'
 import { useContainerDimensions } from '@/hooks/useContainerDimensions'
 import { Grid } from './Grid'
 import { useUIStore } from '@/store/useUIStore'
 import { RenderObject } from './RenderObject'
+import { Minimap } from './Minimap'
 
 // Simple ID generator if uuid not installed (fallback)
 const generateId = () => Math.random().toString(36).substr(2, 9)
 
 export function CanvasArea() {
     const { ref: containerRef, dimensions } = useContainerDimensions()
-    const stageRef = useRef<any>(null)
-    const transformerRef = useRef<any>(null)
+    const stageRef = useRef<Konva.Stage>(null)
+    const transformerRef = useRef<Konva.Transformer>(null)
 
     const {
         canvasObjects,
@@ -31,7 +33,7 @@ export function CanvasArea() {
         gridConfig,
         layers,
         activeLayerId,
-        setActiveLayerId,
+
         viewMode,
         assets
     } = useUIStore()
@@ -66,14 +68,18 @@ export function CanvasArea() {
 
     // Update transformer when selection changes (Multi-select support)
     useEffect(() => {
-        if (stageRef.current && transformerRef.current) {
-            const nodes = selectedIds.map(id => stageRef.current.findOne('.' + id)).filter(Boolean)
+        const stage = stageRef.current
+        const transformer = transformerRef.current
+        if (stage && transformer) {
+            const nodes = selectedIds
+                .map(id => stage.findOne('.' + id))
+                .filter((node): node is Konva.Node => !!node)
 
             if (nodes.length > 0) {
-                transformerRef.current.nodes(nodes)
-                transformerRef.current.getLayer().batchDraw()
+                transformer.nodes(nodes)
+                transformer.getLayer()?.batchDraw()
             } else {
-                transformerRef.current.nodes([])
+                transformer.nodes([])
             }
         }
     }, [selectedIds, visibleObjects]) // Depend on visibleObjects instead of all objects
@@ -139,6 +145,7 @@ export function CanvasArea() {
 
     // Initial Center Alignment
     useEffect(() => {
+        // eslint-disable-next-line
         fitToScreen()
     }, [fitToScreen])
 
@@ -152,14 +159,15 @@ export function CanvasArea() {
         if (!pointer) return
 
         const scaleBy = 1.1
-        const newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy
+        let newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy
 
-        // Limit zoom relative to base scale (10% to 300%)
-        // User requested max 300%
+        // Limit zoom relative to base scale (10% to 1000%)
         const minScale = baseScale * 0.1
-        const maxScale = baseScale * 3.0
+        const maxScale = baseScale * 30.0
 
-        if (newScale < minScale || newScale > maxScale) return
+        // Clamp logic so we can hit exactly maxScale/minScale
+        if (newScale < minScale) newScale = minScale
+        if (newScale > maxScale) newScale = maxScale
 
         const mousePointTo = {
             x: (pointer.x - stage.x()) / oldScale,
@@ -175,13 +183,52 @@ export function CanvasArea() {
         setPosition(newPos)
     }
 
+    const handleZoomStep = (direction: 1 | -1) => {
+        const stage = stageRef.current
+        if (!stage) return
+
+        const oldScale = stage.scaleX()
+        // Step: 10% of BASE scale (linear additives)
+        const step = baseScale * 0.1
+        let newScale = oldScale + (step * direction)
+
+        // Clamp
+        const minScale = baseScale * 0.1
+        const maxScale = baseScale * 30.0
+
+        if (newScale < minScale) newScale = minScale
+        if (newScale > maxScale) newScale = maxScale
+
+        // Center of viewport
+        const center = {
+            x: dimensions.width / 2,
+            y: dimensions.height / 2
+        }
+
+        const mousePointTo = {
+            x: (center.x - stage.x()) / oldScale,
+            y: (center.y - stage.y()) / oldScale,
+        }
+
+        const newPos = {
+            x: center.x - mousePointTo.x * newScale,
+            y: center.y - mousePointTo.y * newScale,
+        }
+
+        stage.scale({ x: newScale, y: newScale })
+        stage.position(newPos)
+        setScale(newScale)
+        setPosition(newPos)
+    }
+
     const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault()
-        stageRef.current.setPointersPositions(e)
+        stageRef.current?.setPointersPositions(e)
         const type = e.dataTransfer.getData('type')
         if (!type) return
 
         const stage = stageRef.current
+        if (!stage) return
         const pointer = stage.getPointerPosition()
         if (!pointer) return
 
@@ -189,9 +236,9 @@ export function CanvasArea() {
         let stageY = (pointer.y - position.y) / scale
 
         // Default to grid size (1x1 cell)
-        let width = gridConfig.size
-        let height = gridConfig.size
-        let radius = gridConfig.size / 2
+        const width = gridConfig.size
+        const height = gridConfig.size
+        const radius = gridConfig.size / 2
         let fill = '#3b82f6'
 
         switch (type) {
@@ -298,7 +345,7 @@ export function CanvasArea() {
             // Actually, if preset has 'name', we might want to use it if it was customized.
 
             const meta = preset.metadata
-            const overrides: any = {}
+            const overrides: Record<string, unknown> = {}
             validKeys.forEach(key => {
                 if (meta[key] !== undefined) {
                     overrides[key] = meta[key]
@@ -464,7 +511,7 @@ export function CanvasArea() {
                                         y: y * scaleX + stageY
                                     }
                                 },
-                                onClick: (e: any) => {
+                                onClick: (e: KonvaEventObject<MouseEvent>) => {
                                     e.cancelBubble = true
 
                                     if (activeTool === 'connect') {
@@ -491,10 +538,10 @@ export function CanvasArea() {
                                         }
                                     }
                                 },
-                                onDragEnd: (e: any) => handleDragEnd(e, obj.id),
+                                onDragEnd: (e: KonvaEventObject<DragEvent>) => handleDragEnd(e, obj.id),
                                 // onTransform removed to prevent Double-Scale / Re-render loop bug during resize.
                                 // Updates will happen on onTransformEnd.
-                                onTransformEnd: (e: any) => handleTransformEnd(e, obj.id),
+                                onTransformEnd: (e: KonvaEventObject<Event>) => handleTransformEnd(e, obj.id),
                             }
 
                             return (
@@ -582,22 +629,56 @@ export function CanvasArea() {
             {/* Floor Selector Removed - Moved to Header */}
 
             {/* Scale/Grid Controls */}
-            <div className="absolute bottom-4 right-4 flex items-center gap-2">
-                {/* Auto-Fit Button */}
-                <button
-                    onClick={fitToScreen}
-                    className="bg-white p-2 rounded-lg shadow-md border hover:bg-gray-50 text-gray-700 transition-colors"
-                    title="Fit to Screen"
-                >
-                    <Maximize size={18} />
-                </button>
+            {/* Minimap & Controls Stacks */}
+            <div className="absolute bottom-4 right-4 flex flex-col items-end gap-3 pointer-events-none">
+                <div className="pointer-events-auto">
+                    {/* Minimap */}
+                    <Minimap
+                        width={gridConfig.size * currentGridCountX}
+                        height={gridConfig.size * currentGridCountY}
+                        objects={visibleObjects}
+                        viewX={position.x}
+                        viewY={position.y}
+                        viewScale={scale}
+                        stageWidth={dimensions.width}
+                        stageHeight={dimensions.height}
+
+                        onNavigate={(x, y) => setPosition({ x, y })}
+                    />
+                </div>
+
+                <div className="pointer-events-auto flex items-center gap-2">
+                    {/* Auto-Fit Button */}
+                    <button
+                        onClick={fitToScreen}
+                        className="bg-white p-2 rounded-lg shadow-md border hover:bg-gray-50 text-gray-700 transition-colors"
+                        title="Fit to Screen"
+                    >
+                        <Maximize size={18} />
+                    </button>
+                </div>
             </div>
 
             {/* Zoom Indicator */}
-            <div className="absolute bottom-4 left-4 flex flex-col gap-2">
-                <div className="bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-lg border border-gray-200 text-sm font-semibold text-gray-700 font-mono">
+            {/* Zoom Indicator & Controls */}
+            <div className="absolute bottom-4 left-4 flex items-center gap-1 bg-white/90 backdrop-blur-sm p-1.5 rounded-full shadow-lg border border-gray-200 text-gray-700">
+                <button
+                    onClick={() => handleZoomStep(-1)}
+                    className="p-1 hover:bg-gray-100 rounded-full transition-colors text-gray-500 hover:text-gray-900"
+                    title="Zoom Out (-10%)"
+                >
+                    <Minus size={16} />
+                </button>
+                <div className="w-12 text-center text-sm font-semibold font-mono select-none">
                     {Math.round((scale / baseScale) * 100)}%
                 </div>
+                <button
+                    onClick={() => handleZoomStep(1)}
+                    className="p-1 hover:bg-gray-100 rounded-full transition-colors text-gray-500 hover:text-gray-900"
+                    title="Zoom In (+10%)"
+                >
+                    <Plus size={16} />
+                </button>
             </div>
 
             {/* Delete Hint */}

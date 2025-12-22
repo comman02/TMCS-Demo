@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 
 export function Header() {
     const { canvasObjects, setCanvasObjects, layers, activeLayerId, setActiveLayerId, viewMode, setViewMode } = useUIStore()
-    // @ts-ignore
+
     const temporal = useStore(useUIStore.temporal, (state) => state)
     const { undo, redo, pastStates, futureStates } = temporal || { undo: () => { }, redo: () => { }, pastStates: [], futureStates: [] }
     const { showSaveFilePicker } = useFileSystem()
@@ -37,6 +37,7 @@ export function Header() {
                     alert('Invalid JSON format')
                 }
             } catch (err) {
+                console.error(err)
                 alert('Failed to parse JSON')
             }
         }

@@ -13,7 +13,7 @@ export function useKeyboardShortcuts() {
     } = useUIStore()
 
     // Zundo temporal store
-    // @ts-ignore
+
     const temporal = useStore(useUIStore.temporal, (state) => state)
     const { undo, redo } = temporal || { undo: () => { }, redo: () => { } }
 

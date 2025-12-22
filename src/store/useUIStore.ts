@@ -24,7 +24,9 @@ export interface CanvasObject {
     rotation?: number
     textColor?: string
     showLabel?: boolean
-    metadata?: Record<string, any> // Type-specific properties
+    metadata?: Record<string, unknown> // Type-specific properties
+    image2d?: string // URL or Base64 for 2D representation
+    image3d?: string // URL or Base64 for 3D representation
     fontFamily?: string
     subLayer?: 'bottom' | 'top' // View mode: Bottom (Floor) vs Top (Ceiling)
 }
@@ -115,7 +117,7 @@ export interface AssetPreset {
     id: string
     name: string
     type: string
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
 }
 
 export const useUIStore = create<UIState>()(
@@ -138,9 +140,26 @@ export const useUIStore = create<UIState>()(
             activeTool: 'select',
             selectedIds: [],
 
-            setGridConfig: (config) => set((state) => ({
-                gridConfig: { ...state.gridConfig, ...config }
-            })),
+            setGridConfig: (config) => set((state) => {
+                const oldSize = state.gridConfig.size
+                const newSize = config.size || oldSize
+
+                // If size is changing, adjust grid counts for all layers to maintain physical size
+                let newLayers = state.layers
+                if (config.size && config.size !== oldSize) {
+                    const ratio = oldSize / newSize
+                    newLayers = state.layers.map(layer => ({
+                        ...layer,
+                        gridCountX: Math.max(1, Math.round(layer.gridCountX * ratio)),
+                        gridCountY: Math.max(1, Math.round(layer.gridCountY * ratio))
+                    }))
+                }
+
+                return {
+                    gridConfig: { ...state.gridConfig, ...config },
+                    layers: newLayers
+                }
+            }),
             addLayer: (name) => set((state) => {
                 const newLayerId = `${name}_${Math.random().toString(36).substr(2, 9)}`
 
@@ -244,7 +263,7 @@ export const useUIStore = create<UIState>()(
             removeCanvasObject: (id) => {
                 set((state) => {
                     // Start with removing the object itself
-                    let objectsToRemove = [id]
+                    const objectsToRemove = [id]
 
                     // If it's a group, remove children too? Or just ungroup?
                     // Let's remove children for now.
