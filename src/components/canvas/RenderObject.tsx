@@ -431,8 +431,8 @@ export function RenderObject({ obj, commonProps }: RenderObjectProps) {
 
     return (
         <Group {...commonProps} width={width} height={height}>
-            {/* 1. Base Shape (Fallback / Background) */}
-            <RenderShape obj={obj} width={width} height={height} />
+            {/* 1. Base Shape (Fallback / Background) - Only render if no image2d */}
+            {!obj.image2d && <RenderShape obj={obj} width={width} height={height} />}
 
             {/* 2. Image Overlay (if available) */}
             {obj.image2d && (

@@ -316,7 +316,7 @@ export const useUIStore = create<UIState>()(
                 { id: 'port_std', name: 'Port Standard', type: 'port' },
                 { id: 'buffer_std', name: 'Buffer Standard', type: 'buffer' },
                 { id: 'charger_std', name: 'Charger Standard', type: 'charger' },
-                { id: 'cv_std', name: 'Conveyor Standard', type: 'conveyor' },
+                { id: 'cv_std', name: 'Conveyor Standard', type: 'conveyor', image2d: '/conveyor-default.png', metadata: { fill: 'transparent' } },
                 { id: 'stocker_l', name: 'Stocker Large', type: 'stocker', metadata: { capacity: 100, zoneId: 'Z-01' } },
                 { id: 'rack_std', name: 'Rack Standard', type: 'rack' },
                 { id: 'wall_std', name: 'Wall Standard', type: 'wall' },
