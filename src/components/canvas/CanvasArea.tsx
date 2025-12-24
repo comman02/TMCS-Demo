@@ -5,7 +5,7 @@ import { KonvaEventObject } from 'konva/lib/Node'
 import { Maximize, Plus, Minus } from 'lucide-react'
 import { useContainerDimensions } from '@/hooks/useContainerDimensions'
 import { Grid } from './Grid'
-import { useUIStore } from '@/store/useUIStore'
+import { useUIStore, CanvasObject } from '@/store/useUIStore'
 import { RenderObject } from './RenderObject'
 import { Minimap } from './Minimap'
 
@@ -308,7 +308,7 @@ export function CanvasArea() {
 
         console.log('Drop Event (Direct):', { type, currentActiveLayerId, currentViewMode })
 
-        let newObj = {
+        let newObj: CanvasObject = {
             id: `${name}_${generateId()}`,
             name,
             type,
@@ -332,26 +332,27 @@ export function CanvasArea() {
         }
 
         // Apply Preset Metadata Overrides
-        if (preset && preset.metadata) {
-            // Only copy valid visual properties that match CanvasObject keys
-            const validKeys = [
-                'width', 'height', 'depth', 'z', 'rotation', 'opacity',
-                'fill', 'showLabel', 'textColor', 'name', 'fontSize'
-            ]
+        if (preset) {
+            if (preset.image2d) {
+                newObj = { ...newObj, image2d: preset.image2d }
+            }
 
-            // If preset has a name (e.g. "Stocker Large"), maybe use it as base name?
-            // User might prefer the generic "Stocker" name with ID, or "Stocker Large_123".
-            // Let's stick to type-based ID for now, but maybe use preset name for something?
-            // Actually, if preset has 'name', we might want to use it if it was customized.
+            if (preset.metadata) {
+                // Only copy valid visual properties that match CanvasObject keys
+                const validKeys = [
+                    'width', 'height', 'depth', 'z', 'rotation', 'opacity',
+                    'fill', 'showLabel', 'textColor', 'name', 'fontSize'
+                ]
 
-            const meta = preset.metadata
-            const overrides: Record<string, unknown> = {}
-            validKeys.forEach(key => {
-                if (meta[key] !== undefined) {
-                    overrides[key] = meta[key]
-                }
-            })
-            newObj = { ...newObj, ...overrides }
+                const meta = preset.metadata
+                const overrides: Record<string, unknown> = {}
+                validKeys.forEach(key => {
+                    if (meta[key] !== undefined) {
+                        overrides[key] = meta[key]
+                    }
+                })
+                newObj = { ...newObj, ...overrides }
+            }
         }
 
         addCanvasObject(newObj)

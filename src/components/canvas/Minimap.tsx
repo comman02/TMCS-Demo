@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CanvasObject } from '@/store/useUIStore'
+import { Pin, PinOff } from 'lucide-react'
 
 interface MinimapProps {
     width: number
@@ -26,10 +27,74 @@ export function Minimap({
 }: MinimapProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null)
 
-    // Fixed Minimap Size
-    const MAP_WIDTH = 240
-    const MAP_HEIGHT = 160
+    // State for Minimap Size
+    const [minimapSize, setMinimapSize] = useState({ width: 240, height: 160 })
+    const MIN_SIZE = 100
+    const [isResizing, setIsResizing] = useState(false)
+    const resizeStart = useRef<{ x: number, y: number, w: number, h: number } | null>(null)
+
+    // Derived from state instead of constants
+    const MAP_WIDTH = minimapSize.width
+    const MAP_HEIGHT = minimapSize.height
     const PADDING = 10
+
+    const [imagesLoaded, setImagesLoaded] = useState(0) // Force re-render when images load
+    const imageCache = useRef<Record<string, HTMLImageElement>>({})
+
+    // Renamed isLocked -> isPinned for user preference
+    const [isPinned, setIsPinned] = useState(true)
+    const [position, setPosition] = useState<{ x: number, y: number } | null>(null)
+    const [isDraggingWidget, setIsDraggingWidget] = useState(false)
+    const dragOffset = useRef<{ x: number, y: number }>({ x: 0, y: 0 })
+
+    // Load Images
+    useEffect(() => {
+        objects.forEach(obj => {
+            if (obj.image2d && !imageCache.current[obj.image2d]) {
+                const img = new Image()
+                img.src = obj.image2d
+                img.onload = () => {
+                    imageCache.current[obj.image2d!] = img
+                    setImagesLoaded((prev: number) => prev + 1)
+                }
+                imageCache.current[obj.image2d] = img // Optimistically set to avoid multiple loads, onload will trigger render
+            }
+        })
+    }, [objects])
+
+    // Resize Handlers
+    const handleResizePointerDown = (e: React.PointerEvent) => {
+        if (isPinned) return
+        e.stopPropagation() // Prevent dragging widget
+        e.currentTarget.setPointerCapture(e.pointerId)
+        setIsResizing(true)
+        resizeStart.current = {
+            x: e.clientX,
+            y: e.clientY,
+            w: minimapSize.width,
+            h: minimapSize.height
+        }
+    }
+
+    const handleResizePointerMove = (e: React.PointerEvent) => {
+        if (!isResizing || !resizeStart.current) return
+        e.stopPropagation()
+
+        const dx = e.clientX - resizeStart.current.x
+        const dy = e.clientY - resizeStart.current.y
+
+        setMinimapSize({
+            width: Math.max(MIN_SIZE, resizeStart.current.w + dx),
+            height: Math.max(MIN_SIZE, resizeStart.current.h + dy)
+        })
+    }
+
+    const handleResizePointerUp = (e: React.PointerEvent) => {
+        if (!isResizing) return
+        setIsResizing(false)
+        e.currentTarget.releasePointerCapture(e.pointerId)
+        resizeStart.current = null
+    }
 
     useEffect(() => {
         const canvas = canvasRef.current
@@ -37,7 +102,7 @@ export function Minimap({
         const ctx = canvas.getContext('2d')
         if (!ctx) return
 
-        // 1. Clear
+        // 1. Clear (to transparent, letting CSS bg-white show through)
         ctx.clearRect(0, 0, MAP_WIDTH, MAP_HEIGHT)
 
         // 2. Calculate Scale to Fit
@@ -60,15 +125,11 @@ export function Minimap({
         ctx.translate(offsetX, offsetY)
 
         // 4. Draw Background (The Grid Area)
-        ctx.fillStyle = '#f8fafc' // Slate-50
+        ctx.fillStyle = '#e5e7eb' // Gray-200 (Neutral Gray)
         ctx.fillRect(0, 0, drawW, drawH)
-        ctx.strokeStyle = '#cbd5e1' // Slate-300
-        ctx.lineWidth = 1 / scale // Keep line thin
-        ctx.strokeRect(0, 0, width * scale, height * scale) // Use original scale logic, wait.
-
-        // Actually simpler to just scale the context?
-        // Let's stick to world coordinates * scale for precision control or just use ctx.scale?
-        // Let's use coordinate math to be explicit.
+        ctx.strokeStyle = '#d1d5db' // Gray-300
+        ctx.lineWidth = 1 // Fixed width, not scaled
+        ctx.strokeRect(0, 0, width * scale, height * scale)
 
         // Background Stroke
         ctx.strokeRect(0, 0, drawW, drawH)
@@ -82,25 +143,21 @@ export function Minimap({
 
             ctx.fillStyle = obj.fill || '#94a3b8' // Slate-400
 
+            // Check if image is available and loaded
+            if (obj.image2d && imageCache.current[obj.image2d] && imageCache.current[obj.image2d].complete) {
+                try {
+                    ctx.drawImage(imageCache.current[obj.image2d], ox, oy, ow, oh)
+                } catch (e) {
+                    // Fallback if draw fails
+                    ctx.fillRect(ox, oy, ow, oh)
+                }
+                return // Skip shape rendering
+            }
+
             // Check for Circular Types
             if (obj.type === 'circle' || obj.type === 'crane' || obj.type === 'port') {
                 ctx.beginPath()
-                // Ellipse support if width != height? Konva Circle is usually r=width/2
-                // Let's assume circle for now based on Konva logic (usually radius or width/2)
                 const radius = Math.min(ow, oh) / 2
-                // Center calculation: Konva rect is top-left, Circle is center if offset used, 
-                // but our store saves x/y as top-left for rects? 
-                // Wait, RenderObject uses offsetX/Y for circles to center them? 
-                // Inspecting RenderObject: 
-                // Circle: offsetX = -width/2, which means the (x,y) point is the CENTER of the circle? 
-                // No, offsetX moves the origin. 
-                // If x=100, y=100. offsetX=-25. The circle is drawn at (100,100) but shifted by -25? 
-                // Actually negative offset moves the drawing right/down. 
-                // Let's check CanvasArea: x: obj.x. 
-                // If it's a circle, visual center is at obj.x + width/2 if offset is used?
-                // Let's assume (x,y) is top-left bounding box for simplicity in minimap 
-                // effectively: center = x + w/2, y + h/2.
-
                 const cx = ox + ow / 2
                 const cy = oy + oh / 2
 
@@ -127,15 +184,18 @@ export function Minimap({
 
         ctx.restore()
 
-    }, [width, height, objects, viewX, viewY, viewScale, stageWidth, stageHeight])
+    }, [width, height, objects, viewX, viewY, viewScale, stageWidth, stageHeight, imagesLoaded, MAP_WIDTH, MAP_HEIGHT])
 
-    const handlePointerDown = (e: React.PointerEvent) => {
+    const [isDraggingViewport, setIsDraggingViewport] = useState(false)
+
+    // Helper to calculate and update view position based on pointer (Viewport Panning)
+    const updateViewportPosition = (clientX: number, clientY: number) => {
         const canvas = canvasRef.current
         if (!canvas) return
 
         const rect = canvas.getBoundingClientRect()
-        const clickX = e.clientX - rect.left
-        const clickY = e.clientY - rect.top
+        const clickX = clientX - rect.left
+        const clickY = clientY - rect.top
 
         // Re-calculate layout to reverse-engineer coordinates
         const availW = MAP_WIDTH - (PADDING * 2)
@@ -158,20 +218,108 @@ export function Minimap({
         onNavigate(newViewX, newViewY)
     }
 
+    // WIDGET DRAG LOGIC
+    const handleWidgetPointerDown = (e: React.PointerEvent) => {
+        if (isPinned) return // Pass through to canvas if Pinned (Locked). 
+        if (isResizing) return // Don't drag widget if resizing
+
+        // If Unpinned, we grab the whole widget.
+        setIsDraggingWidget(true)
+        const rect = e.currentTarget.getBoundingClientRect()
+        dragOffset.current = {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        }
+        e.currentTarget.setPointerCapture(e.pointerId)
+        e.stopPropagation() // Prevent canvas interaction
+    }
+
+    const handleWidgetPointerMove = (e: React.PointerEvent) => {
+        if (!isDraggingWidget || isPinned) return
+
+        const newX = e.clientX - dragOffset.current.x
+        const newY = e.clientY - dragOffset.current.y
+
+        setPosition({ x: newX, y: newY })
+        e.stopPropagation()
+    }
+
+    const handleWidgetPointerUp = (e: React.PointerEvent) => {
+        setIsDraggingWidget(false)
+        e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+
+
+    // CANVAS EVENT HANDLERS (Only for Viewport Panning when Pinned/Locked)
+    const handleCanvasPointerDown = (e: React.PointerEvent) => {
+        if (!isPinned) return // When unpinned, clicking canvas drags the widget via parent handler
+        setIsDraggingViewport(true)
+        e.currentTarget.setPointerCapture(e.pointerId)
+        updateViewportPosition(e.clientX, e.clientY)
+        e.stopPropagation()
+    }
+
+    const handleCanvasPointerMove = (e: React.PointerEvent) => {
+        if (isPinned && isDraggingViewport) {
+            updateViewportPosition(e.clientX, e.clientY)
+        }
+    }
+
+    const handleCanvasPointerUp = (e: React.PointerEvent) => {
+        setIsDraggingViewport(false)
+        e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+
+
     return (
         <div
-            className="bg-white/90 backdrop-blur border rounded-lg shadow-xl overflow-hidden flex flex-col items-center justify-center p-2"
-        // No fixed size on container, let canvas dictate
+            className={`bg-white/90 backdrop-blur border rounded-lg shadow-xl overflow-hidden flex flex-col items-center justify-center p-2 transition-shadow ${!isPinned ? 'cursor-move shadow-2xl ring-2 ring-blue-400' : ''}`}
+            style={{
+                position: position ? 'fixed' : undefined,
+                left: position ? position.x : undefined,
+                top: position ? position.y : undefined,
+                zIndex: 50,
+            }}
+            onPointerDown={handleWidgetPointerDown}
+            onPointerMove={handleWidgetPointerMove}
+            onPointerUp={handleWidgetPointerUp}
         >
-            <canvas
-                ref={canvasRef}
-                width={MAP_WIDTH}
-                height={MAP_HEIGHT}
-                className="cursor-crosshair border border-gray-100 rounded bg-white"
-                onPointerDown={handlePointerDown}
-            />
-            <div className="text-[10px] text-gray-400 mt-1 w-full text-center border-t border-gray-100 pt-1 font-medium tracking-wide">
-                MINIMAP
+            <div className="w-full flex justify-between items-center mb-1 px-1">
+                <span className="text-[10px] text-gray-400 font-medium tracking-wide">MINIMAP</span>
+                <button
+                    onClick={() => setIsPinned(!isPinned)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-gray-900 transition-colors"
+                    title={isPinned ? "Unpin to move/resize minimap" : "Pin position and size"}
+                >
+                    {isPinned ? <Pin size={12} fill="currentColor" className="rotate-45" /> : <PinOff size={12} />}
+                </button>
+            </div>
+
+            <div className="relative">
+                <canvas
+                    ref={canvasRef}
+                    width={MAP_WIDTH}
+                    height={MAP_HEIGHT}
+                    className={`border border-gray-100 rounded bg-white ${isPinned ? 'cursor-crosshair' : 'pointer-events-none'}`}
+                    onPointerDown={handleCanvasPointerDown}
+                    onPointerMove={handleCanvasPointerMove}
+                    onPointerUp={handleCanvasPointerUp}
+                    onPointerLeave={handleCanvasPointerUp}
+                />
+
+                {/* Resize Handle Overlay */}
+                {!isPinned && (
+                    <div
+                        className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize flex items-end justify-end p-0.5"
+                        onPointerDown={handleResizePointerDown}
+                        onPointerMove={handleResizePointerMove}
+                        onPointerUp={handleResizePointerUp}
+                    >
+                        {/* Visual Grip Indicator (CSS Triangle or Icon) */}
+                        <div className="w-0 h-0 border-l-[6px] border-l-transparent border-b-[6px] border-b-gray-400/50 transform rotate-0" />
+                    </div>
+                )}
             </div>
         </div>
     )

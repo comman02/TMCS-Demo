@@ -118,6 +118,7 @@ export interface AssetPreset {
     name: string
     type: string
     metadata?: Record<string, unknown>
+    image2d?: string
 }
 
 export const useUIStore = create<UIState>()(
@@ -305,8 +306,8 @@ export const useUIStore = create<UIState>()(
             setActiveAssetId: (id) => set({ activeAssetId: id, selectedIds: [] }), // Clear canvas selection
 
             assets: [
-                { id: 'agv_std', name: 'AGV Standard', type: 'agv' },
-                { id: 'amr_std', name: 'AMR Standard', type: 'amr' },
+                { id: 'agv_std', name: 'AGV Standard', type: 'agv', image2d: '/agv_default.png' },
+                { id: 'amr_std', name: 'AMR Standard', type: 'amr', image2d: '/amr-default.png' },
                 { id: 'oht_std', name: 'OHT Standard', type: 'oht' },
                 { id: 'oht_rail_std', name: 'OHT Rail Standard', type: 'rail' },
                 { id: 'lifter_std', name: 'Lifter Standard', type: 'lifter' },

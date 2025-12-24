@@ -245,8 +245,158 @@ const RenderShape = ({ obj, width, height }: { obj: CanvasObject, width: number,
         )
     }
 
-    // Default / Generic Rects (Material, OHT, Conveyor, Rail, etc)
-    const isStroked = ['conveyor', 'rail', 'material', 'oht'].includes(obj.type)
+    // AGV / AMR (Vehicle)
+    if (['agv', 'amr'].includes(obj.type)) {
+        // If an image is present, do not render the default vector shape
+        if (obj.image2d) return null
+
+        const isAMR = obj.type === 'amr'
+        const bodyColor = isAMR ? '#fbbf24' : '#eab308' // Amber/Yellow variations
+
+        return (
+            <>
+                {/* Wheels */}
+                <Circle x={width * 0.2} y={height * 0.2} radius={4} fill="#000" />
+                <Circle x={width * 0.8} y={height * 0.2} radius={4} fill="#000" />
+                <Circle x={width * 0.2} y={height * 0.8} radius={4} fill="#000" />
+                <Circle x={width * 0.8} y={height * 0.8} radius={4} fill="#000" />
+
+                {/* Body */}
+                <Rect
+                    x={2}
+                    y={2}
+                    width={width - 4}
+                    height={height - 4}
+                    fill={obj.fill || bodyColor}
+                    stroke="black"
+                    strokeWidth={1}
+                    cornerRadius={isAMR ? 8 : 2}
+                />
+
+                {/* Direction Indicator (Arrow or front marker) */}
+                <Rect
+                    x={width * 0.4}
+                    y={4}
+                    width={width * 0.2}
+                    height={8}
+                    fill="rgba(0,0,0,0.5)"
+                />
+            </>
+        )
+    }
+
+    // Conveyor / OHT Rail (Linear Transport)
+    // Note: Conveoyr is often a surface, Rail is a line.
+    if (obj.type === 'conveyor') {
+        return (
+            <>
+                <Rect
+                    width={width}
+                    height={height}
+                    fill={obj.fill || '#cbd5e1'}
+                    stroke="#64748b"
+                    strokeWidth={1}
+                />
+                {/* Rollers Pattern */}
+                {Array.from({ length: Math.floor(height / 10) }).map((_, i) => (
+                    <Line
+                        key={i}
+                        points={[0, (i + 1) * 10, width, (i + 1) * 10]}
+                        stroke="#94a3b8"
+                        strokeWidth={1}
+                    />
+                ))}
+            </>
+        )
+    }
+
+    if (obj.type === 'rail') {
+        return (
+            <>
+                {/* Rail Line */}
+                <Rect
+                    y={height * 0.4}
+                    width={width}
+                    height={height * 0.2}
+                    fill={obj.fill || '#475569'}
+                />
+                {/* Sleepers / Supports */}
+                {Array.from({ length: Math.floor(width / 20) }).map((_, i) => (
+                    <Rect
+                        key={i}
+                        x={(i * 20) + 5}
+                        y={height * 0.2}
+                        width={4}
+                        height={height * 0.6}
+                        fill="#1e293b"
+                    />
+                ))}
+            </>
+        )
+    }
+
+
+    // OHT (Overhead Hoist Transport) - Vehicle on rail
+    if (obj.type === 'oht') {
+        return (
+            <>
+                <Rect
+                    width={width}
+                    height={height}
+                    fill={obj.fill || '#f472b6'} // Pink/Magentaish
+                    stroke="#db2777"
+                    strokeWidth={1}
+                    cornerRadius={4}
+                />
+                {/* Overhead Grip */}
+                <Circle x={width / 2} y={height / 2} radius={width * 0.3} stroke="white" strokeWidth={2} />
+                <Line points={[0, 0, width, height]} stroke="rgba(255,255,255,0.5)" strokeWidth={1} />
+                <Line points={[width, 0, 0, height]} stroke="rgba(255,255,255,0.5)" strokeWidth={1} />
+            </>
+        )
+    }
+
+    // Lifter
+    if (obj.type === 'lifter') {
+        return (
+            <>
+                <Rect
+                    width={width}
+                    height={height}
+                    fill={obj.fill || '#c084fc'}
+                    stroke="#7e22ce"
+                    strokeWidth={2}
+                />
+                {/* Up/Down Arrows Symbol */}
+                <Group>
+                    <Line points={[width * 0.5, height * 0.2, width * 0.5, height * 0.8]} stroke="white" strokeWidth={3} />
+                    <Line points={[width * 0.3, height * 0.35, width * 0.5, height * 0.2, width * 0.7, height * 0.35]} stroke="white" strokeWidth={3} lineCap='round' lineJoin='round' />
+                    <Line points={[width * 0.3, height * 0.65, width * 0.5, height * 0.8, width * 0.7, height * 0.65]} stroke="white" strokeWidth={3} lineCap='round' lineJoin='round' />
+                </Group>
+            </>
+        )
+    }
+
+    // Material (Generic Box)
+    if (obj.type === 'material') {
+        return (
+            <>
+                <Rect
+                    width={width}
+                    height={height}
+                    fill={obj.fill || '#a855f7'} // Purple box
+                    stroke="#6b21a8"
+                    strokeWidth={1}
+                />
+                {/* Box Texture */}
+                <Rect x={2} y={2} width={width - 4} height={height - 4} stroke="rgba(255,255,255,0.3)" strokeWidth={1} />
+                <Line points={[0, 0, width, height]} stroke="rgba(0,0,0,0.1)" />
+            </>
+        )
+    }
+
+    // Default / Generic Rects
+    const isStroked = true
 
     return (
         <Rect
