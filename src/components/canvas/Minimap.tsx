@@ -218,6 +218,8 @@ export function Minimap({
         onNavigate(newViewX, newViewY)
     }
 
+    const dragLimits = useRef({ maxX: 0, maxY: 0 })
+
     // WIDGET DRAG LOGIC
     const handleWidgetPointerDown = (e: React.PointerEvent) => {
         if (isPinned) return // Pass through to canvas if Pinned (Locked). 
@@ -230,6 +232,11 @@ export function Minimap({
             x: e.clientX - rect.left,
             y: e.clientY - rect.top
         }
+        dragLimits.current = {
+            maxX: window.innerWidth - rect.width,
+            maxY: window.innerHeight - rect.height
+        }
+
         e.currentTarget.setPointerCapture(e.pointerId)
         e.stopPropagation() // Prevent canvas interaction
     }
@@ -237,8 +244,12 @@ export function Minimap({
     const handleWidgetPointerMove = (e: React.PointerEvent) => {
         if (!isDraggingWidget || isPinned) return
 
-        const newX = e.clientX - dragOffset.current.x
-        const newY = e.clientY - dragOffset.current.y
+        let newX = e.clientX - dragOffset.current.x
+        let newY = e.clientY - dragOffset.current.y
+
+        // Clamp
+        newX = Math.max(0, Math.min(newX, dragLimits.current.maxX))
+        newY = Math.max(0, Math.min(newY, dragLimits.current.maxY))
 
         setPosition({ x: newX, y: newY })
         e.stopPropagation()

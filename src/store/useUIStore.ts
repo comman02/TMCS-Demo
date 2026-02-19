@@ -54,10 +54,10 @@ interface UIState {
     toggleSidebar: () => void
 
     // Fab Settings
-    gridConfig: { size: number; unit: 'mm' | 'cm' | 'm' | 'km' }
+    gridConfig: { size: number; unit: 'mm' | 'cm' | 'm' | 'km'; defaultWeight: number }
     layers: FabLayer[]
     activeLayerId: string
-    viewMode: 'bottom' | 'top' // New View Mode for Floor vs Ceiling
+    viewMode: 'bottom' | 'top'
 
     canvasObjects: CanvasObject[]
     canvasLinks: CanvasLink[]
@@ -72,7 +72,7 @@ interface UIState {
     removeCanvasObject: (id: string) => void
 
     // Fab / Layer Actions
-    setGridConfig: (config: Partial<{ size: number; unit: 'mm' | 'cm' | 'm' | 'km' }>) => void
+    setGridConfig: (config: Partial<{ size: number; unit: 'mm' | 'cm' | 'm' | 'km'; defaultWeight: number }>) => void
     addLayer: (name: string) => void
     updateLayer: (id: string, updates: Partial<FabLayer>) => void
     removeLayer: (id: string) => void
@@ -128,7 +128,7 @@ export const useUIStore = create<UIState>()(
             toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
 
             // Initial Fab State
-            gridConfig: { size: 500, unit: 'mm' },
+            gridConfig: { size: 500, unit: 'mm', defaultWeight: 1 },
             layers: [
                 { uid: 'sys-default', id: 'default', name: 'Default', type: 'common', order: -1, height: 4000, gridCountX: 60, gridCountY: 40 },
                 { uid: 'sys-1f', id: '1f', name: '1F', type: 'floor', order: 0, height: 4000, gridCountX: 60, gridCountY: 40 }
@@ -308,16 +308,16 @@ export const useUIStore = create<UIState>()(
             assets: [
                 { id: 'agv_std', name: 'AGV Standard', type: 'agv', image2d: '/agv_default.png' },
                 { id: 'amr_std', name: 'AMR Standard', type: 'amr', image2d: '/amr-default.png' },
-                { id: 'oht_std', name: 'OHT Standard', type: 'oht' },
-                { id: 'oht_rail_std', name: 'OHT Rail Standard', type: 'rail' },
-                { id: 'lifter_std', name: 'Lifter Standard', type: 'lifter' },
-                { id: 'eq_std', name: 'Equipment Standard', type: 'equipment' },
-                { id: 'crane_std', name: 'Crane Standard', type: 'crane' },
+                { id: 'oht_std', name: 'OHT Standard', type: 'oht', image2d: '/oht-processed-v2.png', metadata: { fill: 'transparent' } },
+                { id: 'oht_rail_std', name: 'OHT Rail Standard', type: 'rail', image2d: '/oht-rail-default.png', metadata: { fill: 'transparent' } },
+                { id: 'lifter_std', name: 'Lifter Standard', type: 'lifter', image2d: '/lifter-default.png', metadata: { fill: 'transparent' } },
+                { id: 'eq_std', name: 'Equipment Standard', type: 'equipment', image2d: '/equipment-default.png', metadata: { fill: 'transparent' } },
+                { id: 'crane_std', name: 'Crane Standard', type: 'crane', image2d: '/crane-default.png', metadata: { fill: 'transparent' } },
                 { id: 'port_std', name: 'Port Standard', type: 'port' },
-                { id: 'buffer_std', name: 'Buffer Standard', type: 'buffer' },
-                { id: 'charger_std', name: 'Charger Standard', type: 'charger' },
+                { id: 'buffer_std', name: 'Buffer Standard', type: 'buffer', image2d: '/buffer-default.png', metadata: { fill: 'transparent' } },
+                { id: 'charger_std', name: 'Charger Standard', type: 'charger', image2d: '/charger-default.png', metadata: { fill: 'transparent' } },
                 { id: 'cv_std', name: 'Conveyor Standard', type: 'conveyor', image2d: '/conveyor-default.png', metadata: { fill: 'transparent' } },
-                { id: 'stocker_l', name: 'Stocker Large', type: 'stocker', metadata: { capacity: 100, zoneId: 'Z-01' } },
+                { id: 'stocker_l', name: 'Stocker Large', type: 'stocker', image2d: '/stocker-default.png', metadata: { fill: 'transparent', capacity: 100, zoneId: 'Z-01' } },
                 { id: 'rack_std', name: 'Rack Standard', type: 'rack' },
                 { id: 'wall_std', name: 'Wall Standard', type: 'wall' },
                 { id: 'pillar_std', name: 'Pillar Standard', type: 'pillar' },

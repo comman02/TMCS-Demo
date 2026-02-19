@@ -130,15 +130,20 @@ export function Inspector() {
     const [isPinned, setIsPinned] = useState(false)
     const dragOffsetRef = useRef({ x: 0, y: 0 })
     const panelRef = useRef<HTMLDivElement>(null)
+    const dragLimitsRef = useRef({ maxX: 0, maxY: 0 })
 
     // Handle Dragging
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
             if (isDragging) {
-                setPosition({
-                    x: e.clientX - dragOffsetRef.current.x,
-                    y: e.clientY - dragOffsetRef.current.y
-                })
+                let newX = e.clientX - dragOffsetRef.current.x
+                let newY = e.clientY - dragOffsetRef.current.y
+
+                // Clamp to window bounds
+                newX = Math.max(0, Math.min(newX, dragLimitsRef.current.maxX))
+                newY = Math.max(0, Math.min(newY, dragLimitsRef.current.maxY))
+
+                setPosition({ x: newX, y: newY })
             }
         }
         const handleMouseUp = () => {
@@ -163,6 +168,11 @@ export function Inspector() {
                 x: e.clientX - rect.left,
                 y: e.clientY - rect.top
             }
+            dragLimitsRef.current = {
+                maxX: window.innerWidth - rect.width,
+                maxY: window.innerHeight - rect.height
+            }
+
             // If first time dragging, set initial position to current styles
             if (!position) {
                 setPosition({ x: rect.left, y: rect.top })
@@ -872,6 +882,16 @@ export function Inspector() {
                                         value={toDisplay(gridConfig.size)}
                                         onChange={(val) => {
                                             setGridConfig({ size: fromDisplay(val) })
+                                        }}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-xs text-gray-500">Default Weight</label>
+                                    <NumberInput
+                                        className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-mono"
+                                        value={gridConfig.defaultWeight ?? 1}
+                                        onChange={(val) => {
+                                            setGridConfig({ defaultWeight: val })
                                         }}
                                     />
                                 </div>
