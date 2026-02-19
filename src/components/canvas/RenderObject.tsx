@@ -2,9 +2,71 @@ import { Rect, Circle, Text, Group, Image as KonvaImage, Line } from 'react-konv
 import useImage from 'use-image'
 import { CanvasObject } from '@/store/useUIStore'
 
+type CropBox = { x: number; y: number; width: number; height: number }
+const imageCropCache = new Map<string, CropBox>()
+
+function getOpaqueBounds(image: HTMLImageElement): CropBox | null {
+    const w = image.naturalWidth || image.width
+    const h = image.naturalHeight || image.height
+    if (w <= 0 || h <= 0) return null
+
+    try {
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return null
+
+        ctx.drawImage(image, 0, 0, w, h)
+        const { data } = ctx.getImageData(0, 0, w, h)
+
+        let minX = w
+        let minY = h
+        let maxX = -1
+        let maxY = -1
+
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const alpha = data[(y * w + x) * 4 + 3]
+                if (alpha > 0) {
+                    if (x < minX) minX = x
+                    if (y < minY) minY = y
+                    if (x > maxX) maxX = x
+                    if (y > maxY) maxY = y
+                }
+            }
+        }
+
+        if (maxX < minX || maxY < minY) return null
+        return {
+            x: minX,
+            y: minY,
+            width: maxX - minX + 1,
+            height: maxY - minY + 1,
+        }
+    } catch {
+        return null
+    }
+}
+
 const URLImage = ({ src, x, y, width, height }: { src: string, x?: number, y?: number, width: number, height: number }) => {
     const [image] = useImage(src)
-    return <KonvaImage image={image} x={x} y={y} width={width} height={height} />
+    let crop: CropBox | undefined
+
+    if (image) {
+        const cached = imageCropCache.get(src)
+        if (cached) {
+            crop = cached
+        } else {
+            const bounds = getOpaqueBounds(image)
+            if (bounds) {
+                imageCropCache.set(src, bounds)
+                crop = bounds
+            }
+        }
+    }
+
+    return <KonvaImage image={image} x={x} y={y} width={width} height={height} crop={crop} />
 }
 
 interface RenderObjectProps {

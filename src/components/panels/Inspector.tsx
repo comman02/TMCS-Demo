@@ -116,12 +116,17 @@ export function Inspector() {
         setGridConfig,
         layers,
         updateLayer,
+        toggleLayerVisibility,
+        toggleLayerLock,
         removeLayer,
         renameLayer,
         activeAssetId,
         assets,
         updateAssetPreset,
-        activeLayerId
+        activeLayerId,
+        cadOverlay,
+        updateCadOverlay,
+        cadOverlaySelected
     } = useUIStore()
 
     const [position, setPosition] = useState<{ x: number, y: number } | null>(null)
@@ -840,6 +845,186 @@ export function Inspector() {
                 </div>
             )
         }
+    } else if (cadOverlay && cadOverlaySelected) {
+        const activeLayer = layers.find(l => l.id === activeLayerId)
+        const floorWidth = (activeLayer?.gridCountX || 60) * gridConfig.size
+        const floorHeight = (activeLayer?.gridCountY || 40) * gridConfig.size
+        const naturalWidth = cadOverlay.naturalWidth || cadOverlay.width
+        const naturalHeight = cadOverlay.naturalHeight || cadOverlay.height
+        const cropX = cadOverlay.cropX || 0
+        const cropY = cadOverlay.cropY || 0
+        const cropWidth = cadOverlay.cropWidth || naturalWidth
+        const cropHeight = cadOverlay.cropHeight || naturalHeight
+
+        const updateCrop = (updates: Partial<{ cropX: number; cropY: number; cropWidth: number; cropHeight: number }>) => {
+            const nextX = updates.cropX ?? cropX
+            const nextY = updates.cropY ?? cropY
+            const nextW = updates.cropWidth ?? cropWidth
+            const nextH = updates.cropHeight ?? cropHeight
+
+            const clampedX = Math.max(0, Math.min(nextX, naturalWidth - 1))
+            const clampedY = Math.max(0, Math.min(nextY, naturalHeight - 1))
+            const clampedW = Math.max(1, Math.min(nextW, naturalWidth - clampedX))
+            const clampedH = Math.max(1, Math.min(nextH, naturalHeight - clampedY))
+
+            updateCadOverlay({
+                cropX: clampedX,
+                cropY: clampedY,
+                cropWidth: clampedW,
+                cropHeight: clampedH
+            })
+        }
+
+        headerContent = (
+            <div className="flex items-center gap-2">
+                <ImageIcon size={16} />
+                <span className="font-semibold text-sm text-gray-900">CAD Overlay</span>
+            </div>
+        )
+
+        bodyContent = (
+            <div className="space-y-5">
+                <div className="space-y-3">
+                    <div className="space-y-1">
+                        <label className="text-xs text-gray-500">Name</label>
+                        <input
+                            type="text"
+                            className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                            value={cadOverlay.name}
+                            onChange={(e) => updateCadOverlay({ name: e.target.value })}
+                        />
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-xs text-gray-500">Opacity</label>
+                        <div className="flex gap-2 items-center">
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.05"
+                                className="flex-1 accent-blue-500 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                value={cadOverlay.opacity}
+                                onChange={(e) => updateCadOverlay({ opacity: Number(e.target.value) })}
+                            />
+                            <span className="text-xs w-8 text-right font-mono text-gray-500">
+                                {Math.round(cadOverlay.opacity * 100)}%
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="h-px bg-gray-100" />
+
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <Move size={12} /> Placement ({gridConfig.unit})
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">X</label>
+                            <NumberInput
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                value={toDisplay(cadOverlay.x)}
+                                onChange={(val) => updateCadOverlay({ x: fromDisplay(val) })}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Y</label>
+                            <NumberInput
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                value={toDisplay(cadOverlay.y)}
+                                onChange={(val) => updateCadOverlay({ y: fromDisplay(val) })}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Width</label>
+                            <NumberInput
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                value={toDisplay(cadOverlay.width)}
+                                onChange={(val) => updateCadOverlay({ width: Math.max(1, fromDisplay(val)) })}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Height</label>
+                            <NumberInput
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                value={toDisplay(cadOverlay.height)}
+                                onChange={(val) => updateCadOverlay({ height: Math.max(1, fromDisplay(val)) })}
+                            />
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => {
+                            const fitScale = Math.min(floorWidth / cropWidth, floorHeight / cropHeight) * 0.95
+                            const nextWidth = cropWidth * fitScale
+                            const nextHeight = cropHeight * fitScale
+                            updateCadOverlay({
+                                width: nextWidth,
+                                height: nextHeight,
+                                x: Math.max(0, (floorWidth - nextWidth) / 2),
+                                y: Math.max(0, (floorHeight - nextHeight) / 2)
+                            })
+                        }}
+                        className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-md text-sm font-medium border border-gray-100"
+                    >
+                        Fit To Floor
+                    </button>
+                </div>
+
+                <div className="h-px bg-gray-100" />
+
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <Maximize size={12} /> Crop (pixels)
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Crop X</label>
+                            <NumberInput
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                value={cropX}
+                                onChange={(val) => updateCrop({ cropX: val })}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Crop Y</label>
+                            <NumberInput
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                value={cropY}
+                                onChange={(val) => updateCrop({ cropY: val })}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Crop Width</label>
+                            <NumberInput
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                value={cropWidth}
+                                onChange={(val) => updateCrop({ cropWidth: val })}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs text-gray-500">Crop Height</label>
+                            <NumberInput
+                                className="w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                value={cropHeight}
+                                onChange={(val) => updateCrop({ cropHeight: val })}
+                            />
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => updateCadOverlay({
+                            cropX: 0,
+                            cropY: 0,
+                            cropWidth: naturalWidth,
+                            cropHeight: naturalHeight
+                        })}
+                        className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-md text-sm font-medium border border-gray-100"
+                    >
+                        Reset Crop
+                    </button>
+                </div>
+            </div>
+        )
     } else if (activeLayerId) {
         // LAYER PROPERTIES (Fab / Floor)
         const activeLayer = layers.find(l => l.id === activeLayerId)
@@ -927,6 +1112,35 @@ export function Inspector() {
                                     onChange={(e) => renameLayer(activeLayer.id, e.target.value)}
                                 // Maybe disable for 'default' to prevent bugs?
                                 // disabled={activeLayer.type === 'common'}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="h-px bg-gray-100" />
+
+                    {/* Layer Behavior */}
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <Layers size={12} /> Layer Behavior
+                        </div>
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs text-gray-500">Visible</label>
+                                <input
+                                    type="checkbox"
+                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    checked={activeLayer.visible}
+                                    onChange={() => toggleLayerVisibility(activeLayer.id)}
+                                />
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs text-gray-500">Locked</label>
+                                <input
+                                    type="checkbox"
+                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    checked={activeLayer.locked}
+                                    onChange={() => toggleLayerLock(activeLayer.id)}
                                 />
                             </div>
                         </div>

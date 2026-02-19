@@ -14,3 +14,11 @@ declare global {
         close(): Promise<void>;
     }
 }
+
+interface ImportMetaEnv {
+    readonly VITE_DWG_CONVERTER_URL?: string;
+}
+
+interface ImportMeta {
+    readonly env: ImportMetaEnv;
+}

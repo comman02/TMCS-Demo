@@ -2,6 +2,8 @@ import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { Stage, Layer, Transformer, Arrow } from 'react-konva'
 import Konva from 'konva'
 import { KonvaEventObject } from 'konva/lib/Node'
+import useImage from 'use-image'
+import { Image as KonvaImage } from 'react-konva'
 import { Maximize, Plus, Minus } from 'lucide-react'
 import { useContainerDimensions } from '@/hooks/useContainerDimensions'
 import { Grid } from './Grid'
@@ -16,6 +18,8 @@ export function CanvasArea() {
     const { ref: containerRef, dimensions } = useContainerDimensions()
     const stageRef = useRef<Konva.Stage>(null)
     const transformerRef = useRef<Konva.Transformer>(null)
+    const cadImageRef = useRef<Konva.Image>(null)
+    const cadTransformerRef = useRef<Konva.Transformer>(null)
 
     const {
         canvasObjects,
@@ -27,6 +31,8 @@ export function CanvasArea() {
         clearSelection,
         updateCanvasObject,
         removeCanvasObject,
+        updateCadOverlay,
+        setCadOverlaySelected,
         activeTool,
         setActiveTool,
         addLink,
@@ -35,36 +41,40 @@ export function CanvasArea() {
         activeLayerId,
 
         viewMode,
-        assets
+        assets,
+        cadOverlay,
+        cadOverlaySelected
     } = useUIStore()
 
     const [scale, setScale] = useState(1)
     const [baseScale, setBaseScale] = useState(1) // Base scale for 100% reference
     const [position, setPosition] = useState({ x: 0, y: 0 })
     const [connectSourceId, setConnectSourceId] = useState<string | null>(null)
-
+    const [cadImage] = useImage(cadOverlay?.src || '')
     // Get Active Layer Dimensions
     const activeLayer = layers.find(l => l.id === activeLayerId) || layers[0]
     const currentGridCountX = activeLayer?.gridCountX || 60
     const currentGridCountY = activeLayer?.gridCountY || 40
+    const layerById = useMemo(() => {
+        const map: Record<string, typeof layers[number]> = {}
+        layers.forEach(layer => {
+            map[layer.id] = layer
+        })
+        return map
+    }, [layers])
 
-    // Filter objects: Show objects on current layer ONLY
+    // Filter objects: show only objects on visible layers
     const visibleObjects = useMemo(() => {
-        console.log('Filtering Objects:', { activeLayerId, viewMode, total: canvasObjects.length, layers })
         return canvasObjects.filter(obj => {
-            // 1. Floor Logic: Must match Active Layer
-            // Legacy Fix: If layerId is missing, assume '1f' (default active layer)
             const objectLayerId = obj.layerId || '1f'
-
-            console.log('Obj Check:', { id: obj.id, type: obj.type, layer: obj.layerId, active: activeLayerId, match: objectLayerId === activeLayerId })
-
-            if (objectLayerId !== activeLayerId) return false
+            const layer = layerById[objectLayerId]
+            if (!layer?.visible) return false
 
             // 2. Sub-Layer Logic: Must match View Mode (Bottom vs Top)
             const objSubLayer = obj.subLayer || 'bottom'
             return objSubLayer === viewMode
         })
-    }, [canvasObjects, activeLayerId, viewMode, layers])
+    }, [canvasObjects, layerById, viewMode])
 
     // Update transformer when selection changes (Multi-select support)
     useEffect(() => {
@@ -72,6 +82,12 @@ export function CanvasArea() {
         const transformer = transformerRef.current
         if (stage && transformer) {
             const nodes = selectedIds
+                .filter(id => {
+                    const obj = canvasObjects.find(o => o.id === id)
+                    if (!obj) return true
+                    const layer = layerById[obj.layerId || '1f']
+                    return !layer?.locked
+                })
                 .map(id => stage.findOne('.' + id))
                 .filter((node): node is Konva.Node => !!node)
 
@@ -82,7 +98,20 @@ export function CanvasArea() {
                 transformer.nodes([])
             }
         }
-    }, [selectedIds, visibleObjects]) // Depend on visibleObjects instead of all objects
+    }, [selectedIds, visibleObjects, canvasObjects, layerById]) // Depend on visibleObjects instead of all objects
+
+    useEffect(() => {
+        const transformer = cadTransformerRef.current
+        const imageNode = cadImageRef.current
+        if (!transformer) return
+
+        if (cadOverlaySelected && imageNode) {
+            transformer.nodes([imageNode])
+            transformer.getLayer()?.batchDraw()
+        } else {
+            transformer.nodes([])
+        }
+    }, [cadOverlaySelected, cadOverlay?.id, cadOverlay?.width, cadOverlay?.height])
 
     useEffect(() => {
         const handleExport = () => {
@@ -107,14 +136,20 @@ export function CanvasArea() {
                 // Prevent backspace from navigating back if not in an input
                 const activeElement = document.activeElement
                 if (activeElement?.tagName !== 'INPUT' && activeElement?.tagName !== 'TEXTAREA') {
-                    selectedIds.forEach(id => removeCanvasObject(id))
+                    selectedIds.forEach(id => {
+                        const obj = canvasObjects.find(o => o.id === id)
+                        if (!obj) return
+                        const layer = layerById[obj.layerId || '1f']
+                        if (layer?.locked) return
+                        removeCanvasObject(id)
+                    })
                     clearSelection()
                 }
             }
         }
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [selectedIds, removeCanvasObject, clearSelection])
+    }, [selectedIds, removeCanvasObject, clearSelection, canvasObjects, layerById])
 
     const fitToScreen = useCallback(() => {
         if (dimensions.width > 0 && dimensions.height > 0) {
@@ -360,6 +395,10 @@ export function CanvasArea() {
     }
 
     const handleDragEnd = (e: KonvaEventObject<DragEvent>, id: string) => {
+        const obj = canvasObjects.find(o => o.id === id)
+        if (!obj) return
+        const layer = layerById[obj.layerId || '1f']
+        if (layer?.locked) return
         updateCanvasObject(id, {
             x: e.target.x(),
             y: e.target.y(),
@@ -367,6 +406,10 @@ export function CanvasArea() {
     }
 
     const handleTransformEnd = (e: KonvaEventObject<Event>, id: string) => {
+        const obj = canvasObjects.find(o => o.id === id)
+        if (!obj) return
+        const layer = layerById[obj.layerId || '1f']
+        if (layer?.locked) return
         // Sync transformer changes back to store (scale, rotation, etc)
         const node = e.target
         const scaleX = node.scaleX()
@@ -417,6 +460,7 @@ export function CanvasArea() {
                                 setActiveTool('select')
                             }
                             selectObject(null)
+                            setCadOverlaySelected(false)
                             // Also clear active asset so Inspector falls back to Layer/Fab properties
                             useUIStore.getState().setActiveAssetId(null)
                         }
@@ -432,6 +476,65 @@ export function CanvasArea() {
                             size={gridConfig.size}
                             countX={currentGridCountX}
                             countY={currentGridCountY}
+                        />
+                        {cadOverlay?.visible && cadImage && (
+                            <KonvaImage
+                                ref={cadImageRef}
+                                image={cadImage}
+                                x={cadOverlay.x}
+                                y={cadOverlay.y}
+                                width={cadOverlay.width}
+                                height={cadOverlay.height}
+                                crop={{
+                                    x: cadOverlay.cropX || 0,
+                                    y: cadOverlay.cropY || 0,
+                                    width: cadOverlay.cropWidth || cadOverlay.naturalWidth || cadOverlay.width,
+                                    height: cadOverlay.cropHeight || cadOverlay.naturalHeight || cadOverlay.height,
+                                }}
+                                opacity={cadOverlay.opacity}
+                                draggable={activeTool === 'select'}
+                                onClick={(e) => {
+                                    e.cancelBubble = true
+                                    selectObject(null)
+                                    setCadOverlaySelected(true)
+                                }}
+                                onDragEnd={(e) => {
+                                    updateCadOverlay({ x: e.target.x(), y: e.target.y() })
+                                }}
+                                onTransformEnd={(e) => {
+                                    const node = e.target as Konva.Image
+                                    const nextWidth = Math.max(1, node.width() * node.scaleX())
+                                    const nextHeight = Math.max(1, node.height() * node.scaleY())
+
+                                    node.scaleX(1)
+                                    node.scaleY(1)
+                                    updateCadOverlay({
+                                        x: node.x(),
+                                        y: node.y(),
+                                        width: nextWidth,
+                                        height: nextHeight,
+                                    })
+                                }}
+                            />
+                        )}
+                        <Transformer
+                            ref={cadTransformerRef}
+                            rotateEnabled={false}
+                            flipEnabled={false}
+                            enabledAnchors={[
+                                'top-left',
+                                'top-right',
+                                'bottom-left',
+                                'bottom-right',
+                                'middle-left',
+                                'middle-right',
+                                'top-center',
+                                'bottom-center',
+                            ]}
+                            boundBoxFunc={(oldBox, newBox) => {
+                                if (newBox.width < 20 || newBox.height < 20) return oldBox
+                                return newBox
+                            }}
                         />
                     </Layer>
                     <Layer>
@@ -461,6 +564,7 @@ export function CanvasArea() {
                                     hitStrokeWidth={20} // Easier to click
                                     onClick={(e) => {
                                         e.cancelBubble = true
+                                        setCadOverlaySelected(false)
                                         if (e.evt.shiftKey) {
                                             toggleSelection(link.id)
                                         } else {
@@ -472,6 +576,8 @@ export function CanvasArea() {
                         })}
 
                         {visibleObjects.map((obj) => {
+                            const objectLayer = layerById[obj.layerId || '1f']
+                            const isLocked = !!objectLayer?.locked
                             const commonProps = {
                                 key: obj.id,
                                 id: obj.id,
@@ -480,13 +586,14 @@ export function CanvasArea() {
                                 y: obj.y,
                                 rotation: obj.rotation || 0,
                                 opacity: obj.opacity ?? 1,
-                                draggable: true,
+                                draggable: !isLocked,
                                 dragBoundFunc: (pos: { x: number, y: number }) => {
                                     const stage = stageRef.current
                                     if (!stage) return pos
 
-                                    const totalWidth = gridConfig.size * currentGridCountX
-                                    const totalHeight = gridConfig.size * currentGridCountY
+                                    const objectLayerConfig = layerById[obj.layerId || '1f'] || activeLayer
+                                    const totalWidth = gridConfig.size * (objectLayerConfig?.gridCountX || currentGridCountX)
+                                    const totalHeight = gridConfig.size * (objectLayerConfig?.gridCountY || currentGridCountY)
 
                                     const scaleX = stage.scaleX()
                                     const stageX = stage.x()
@@ -514,6 +621,7 @@ export function CanvasArea() {
                                 },
                                 onClick: (e: KonvaEventObject<MouseEvent>) => {
                                     e.cancelBubble = true
+                                    setCadOverlaySelected(false)
 
                                     if (activeTool === 'connect') {
                                         if (!connectSourceId) {
@@ -555,6 +663,7 @@ export function CanvasArea() {
                         })}
                         <Transformer
                             ref={transformerRef}
+                            ignoreStroke
                             boundBoxFunc={(oldBox, newBox) => {
                                 const stage = stageRef.current
                                 // Safety: if stage doesn't exist yet, just return oldBox to invalid state

@@ -23,7 +23,11 @@ import {
     Plus,
     Trash2,
     Layers,
-    Cuboid
+    Cuboid,
+    Eye,
+    EyeOff,
+    Lock,
+    LockOpen
 } from 'lucide-react'
 
 // Define Asset Categories
@@ -91,7 +95,9 @@ export function Sidebar() {
         activeLayerId,
         setActiveLayerId,
         addLayer,
-        removeLayer
+        removeLayer,
+        toggleLayerVisibility,
+        toggleLayerLock
     } = useUIStore()
     const [expandedCategories, setExpandedCategories] = useState<string[]>(['basic', 'logistics'])
     const [activeTab, setActiveTab] = useState<'assets' | 'layers'>('assets')
@@ -299,23 +305,47 @@ export function Sidebar() {
                                             <span className={cn("font-medium truncate", activeLayerId === layer.id ? "text-blue-700" : "text-gray-700")}>
                                                 {layer.name}
                                             </span>
+                                            {!layer.visible && <span className="text-[10px] px-1 py-0.5 rounded bg-gray-200 text-gray-600">Hidden</span>}
+                                            {layer.locked && <span className="text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700">Locked</span>}
                                         </div>
                                         <span className="text-[10px] text-gray-400 font-mono truncate pl-0.5">
                                             {layer.type === 'common' ? 'Default / Skeleton' : layer.id}
                                         </span>
                                     </div>
 
-                                    {layer.type !== 'common' && (
+                                    <div className="flex items-center gap-0.5">
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation()
-                                                removeLayer(layer.id)
+                                                toggleLayerVisibility(layer.id)
                                             }}
-                                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-all"
+                                            className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded opacity-0 group-hover:opacity-100 transition-all"
+                                            title={layer.visible ? 'Hide Layer' : 'Show Layer'}
                                         >
-                                            <Trash2 size={14} />
+                                            {layer.visible ? <Eye size={14} /> : <EyeOff size={14} />}
                                         </button>
-                                    )}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                toggleLayerLock(layer.id)
+                                            }}
+                                            className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded opacity-0 group-hover:opacity-100 transition-all"
+                                            title={layer.locked ? 'Unlock Layer' : 'Lock Layer'}
+                                        >
+                                            {layer.locked ? <Lock size={14} /> : <LockOpen size={14} />}
+                                        </button>
+                                        {layer.type !== 'common' && (
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    removeLayer(layer.id)
+                                                }}
+                                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-all"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>

@@ -47,6 +47,26 @@ export interface FabLayer {
     height: number
     gridCountX: number
     gridCountY: number
+    visible: boolean
+    locked: boolean
+}
+
+export interface CadOverlay {
+    id: string
+    name: string
+    src: string
+    naturalWidth: number
+    naturalHeight: number
+    x: number
+    y: number
+    width: number
+    height: number
+    cropX: number
+    cropY: number
+    cropWidth: number
+    cropHeight: number
+    opacity: number
+    visible: boolean
 }
 
 interface UIState {
@@ -63,6 +83,8 @@ interface UIState {
     canvasLinks: CanvasLink[]
     activeTool: 'select' | 'hand' | 'connect' | string
     selectedIds: string[]
+    cadOverlay: CadOverlay | null
+    cadOverlaySelected: boolean
 
     // Actions
     setActiveTool: (tool: string) => void
@@ -70,11 +92,17 @@ interface UIState {
     addCanvasObject: (object: CanvasObject) => void
     updateCanvasObject: (id: string, updates: Partial<CanvasObject>) => void
     removeCanvasObject: (id: string) => void
+    setCadOverlay: (overlay: CadOverlay) => void
+    updateCadOverlay: (updates: Partial<CadOverlay>) => void
+    clearCadOverlay: () => void
+    setCadOverlaySelected: (selected: boolean) => void
 
     // Fab / Layer Actions
     setGridConfig: (config: Partial<{ size: number; unit: 'mm' | 'cm' | 'm' | 'km'; defaultWeight: number }>) => void
     addLayer: (name: string) => void
     updateLayer: (id: string, updates: Partial<FabLayer>) => void
+    toggleLayerVisibility: (id: string) => void
+    toggleLayerLock: (id: string) => void
     removeLayer: (id: string) => void
     renameLayer: (oldId: string, newId: string) => void
     setActiveLayerId: (id: string) => void
@@ -130,8 +158,8 @@ export const useUIStore = create<UIState>()(
             // Initial Fab State
             gridConfig: { size: 500, unit: 'mm', defaultWeight: 1 },
             layers: [
-                { uid: 'sys-default', id: 'default', name: 'Default', type: 'common', order: -1, height: 4000, gridCountX: 60, gridCountY: 40 },
-                { uid: 'sys-1f', id: '1f', name: '1F', type: 'floor', order: 0, height: 4000, gridCountX: 60, gridCountY: 40 }
+                { uid: 'sys-default', id: 'default', name: 'Default', type: 'common', order: -1, height: 4000, gridCountX: 60, gridCountY: 40, visible: true, locked: false },
+                { uid: 'sys-1f', id: '1f', name: '1F', type: 'floor', order: 0, height: 4000, gridCountX: 60, gridCountY: 40, visible: true, locked: false }
             ],
             activeLayerId: '1f',
             viewMode: 'bottom',
@@ -140,6 +168,8 @@ export const useUIStore = create<UIState>()(
             canvasLinks: [],
             activeTool: 'select',
             selectedIds: [],
+            cadOverlay: null,
+            cadOverlaySelected: false,
 
             setGridConfig: (config) => set((state) => {
                 const oldSize = state.gridConfig.size
@@ -180,7 +210,9 @@ export const useUIStore = create<UIState>()(
                     order: state.layers.length,
                     height: initialHeight,
                     gridCountX: initialGridX,
-                    gridCountY: initialGridY
+                    gridCountY: initialGridY,
+                    visible: true,
+                    locked: false
                 }
 
                 // CLONE Objects from Common Layer
@@ -200,6 +232,12 @@ export const useUIStore = create<UIState>()(
             }),
             updateLayer: (id, updates) => set((state) => ({
                 layers: state.layers.map(l => l.id === id ? { ...l, ...updates } : l)
+            })),
+            toggleLayerVisibility: (id) => set((state) => ({
+                layers: state.layers.map(l => l.id === id ? { ...l, visible: !l.visible } : l)
+            })),
+            toggleLayerLock: (id) => set((state) => ({
+                layers: state.layers.map(l => l.id === id ? { ...l, locked: !l.locked } : l)
             })),
             removeLayer: (id) => set((state) => {
                 const layerToRemove = state.layers.find(l => l.id === id)
@@ -254,15 +292,30 @@ export const useUIStore = create<UIState>()(
             },
 
             updateCanvasObject: (id, updates) => {
-                set((state) => ({
-                    canvasObjects: state.canvasObjects.map((obj) =>
-                        obj.id === id ? { ...obj, ...updates } : obj
-                    ),
-                }))
+                set((state) => {
+                    const target = state.canvasObjects.find(obj => obj.id === id)
+                    if (!target) return {}
+                    const targetLayerId = target.layerId || '1f'
+                    const targetLayer = state.layers.find(l => l.id === targetLayerId)
+                    if (targetLayer?.locked) return {}
+
+                    return {
+                        canvasObjects: state.canvasObjects.map((obj) =>
+                            obj.id === id ? { ...obj, ...updates } : obj
+                        ),
+                    }
+                })
             },
 
             removeCanvasObject: (id) => {
                 set((state) => {
+                    const target = state.canvasObjects.find(obj => obj.id === id)
+                    if (target) {
+                        const targetLayerId = target.layerId || '1f'
+                        const targetLayer = state.layers.find(l => l.id === targetLayerId)
+                        if (targetLayer?.locked) return {}
+                    }
+
                     // Start with removing the object itself
                     const objectsToRemove = [id]
 
@@ -286,6 +339,12 @@ export const useUIStore = create<UIState>()(
                     }
                 })
             },
+            setCadOverlay: (overlay) => set({ cadOverlay: overlay }),
+            updateCadOverlay: (updates) => set((state) => ({
+                cadOverlay: state.cadOverlay ? { ...state.cadOverlay, ...updates } : null
+            })),
+            clearCadOverlay: () => set({ cadOverlay: null, cadOverlaySelected: false }),
+            setCadOverlaySelected: (selected) => set({ cadOverlaySelected: selected }),
 
             selectObject: (id) => set({ selectedIds: id ? [id] : [] }),
 
@@ -347,7 +406,12 @@ export const useUIStore = create<UIState>()(
                 const selectedIds = state.selectedIds
                 if (selectedIds.length < 2) return
 
-                const objectsToAlign = state.canvasObjects.filter(obj => selectedIds.includes(obj.id))
+                const objectsToAlign = state.canvasObjects.filter(obj => {
+                    if (!selectedIds.includes(obj.id)) return false
+                    const layerId = obj.layerId || '1f'
+                    const layer = state.layers.find(l => l.id === layerId)
+                    return !layer?.locked
+                })
                 if (objectsToAlign.length === 0) return
 
                 // Calculate bounding box of selection
@@ -407,7 +471,12 @@ export const useUIStore = create<UIState>()(
                 const state = get()
                 if (ids.length < 2) return
 
-                const objectsToGroup = state.canvasObjects.filter(obj => ids.includes(obj.id))
+                const objectsToGroup = state.canvasObjects.filter(obj => {
+                    if (!ids.includes(obj.id)) return false
+                    const layerId = obj.layerId || '1f'
+                    const layer = state.layers.find(l => l.id === layerId)
+                    return !layer?.locked
+                })
                 if (objectsToGroup.length === 0) return
 
                 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
@@ -457,6 +526,9 @@ export const useUIStore = create<UIState>()(
                 const state = get()
                 const group = state.canvasObjects.find(o => o.id === groupId)
                 if (!group) return
+                const groupLayerId = group.layerId || '1f'
+                const groupLayer = state.layers.find(l => l.id === groupLayerId)
+                if (groupLayer?.locked) return
 
                 const children = state.canvasObjects.filter(o => o.parentId === groupId)
 
@@ -512,6 +584,11 @@ export const useUIStore = create<UIState>()(
 
             renameCanvasObject: (oldId, newId) => set((state) => {
                 if (state.canvasObjects.some(obj => obj.id === newId)) return {}
+                const target = state.canvasObjects.find(obj => obj.id === oldId)
+                if (!target) return {}
+                const layerId = target.layerId || '1f'
+                const layer = state.layers.find(l => l.id === layerId)
+                if (layer?.locked) return {}
 
                 // 1. Update Object ID
                 const updatedObjects = state.canvasObjects.map(obj =>
@@ -542,6 +619,7 @@ export const useUIStore = create<UIState>()(
             partialize: (state) => ({
                 canvasObjects: state.canvasObjects,
                 canvasLinks: state.canvasLinks,
+                cadOverlay: state.cadOverlay,
             })
         }
     )
